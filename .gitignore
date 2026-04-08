@@ -1,0 +1,50 @@
+node_modules/
+.expo/
+dist/
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# macOS
+.DS_Store
+*.pem
+
+# Local env files
+.env
+.env*.local
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# SQLite
+*.db
+*.sqlite
+
+# Chroma
+chroma_data/
