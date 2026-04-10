@@ -20,6 +20,9 @@ class DiaryResponse(BaseModel):
     emotion: Optional[str] = None
     emotion_score: Optional[float] = None
     emotion_keywords: Optional[List[str]] = []
+    secondary_emotions: Optional[List[str]] = []
+    emotion_dimension: Optional[str] = None
+    emotion_confidence: Optional[float] = None
     topics: Optional[List[str]] = []
     key_events: Optional[List[str]] = []
     recording_duration: Optional[int] = None
@@ -58,9 +61,12 @@ class AnalyzeRequest(BaseModel):
 
 class EmotionResult(BaseModel):
     """情绪分析结果"""
-    emotion: str = Field(..., description="情绪类型")
+    emotion: str = Field(..., description="主要情绪类型")
+    secondary_emotions: List[str] = Field(default=[], description="次要情绪")
+    dimension: str = Field(default="mixed", description="情绪维度")
     score: float = Field(..., ge=1, le=10, description="情绪强度")
     keywords: List[str] = Field(default=[], description="情绪关键词")
+    confidence: float = Field(default=0.8, ge=0, le=1, description="识别信心度")
 
 
 class AnalyzeResponse(BaseModel):

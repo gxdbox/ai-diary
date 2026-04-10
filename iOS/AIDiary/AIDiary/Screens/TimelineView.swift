@@ -11,9 +11,9 @@ struct TimelineView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 statusBarPlaceholder
-                
+
                 header
-                
+
                 if isLoading {
                     loadingView
                 } else if diaries.isEmpty {
@@ -22,6 +22,7 @@ struct TimelineView: View {
                     diaryList
                 }
             }
+            .background(Color(hex: "F5F4F1"))
             .navigationDestination(item: $selectedDiary) { diary in
                 DiaryDetailView(diary: diary)
             }
@@ -114,7 +115,7 @@ struct TimelineView: View {
             do {
                 // 先从缓存加载
                 let cachedDiaries = await CacheService.shared.getAllDiaries()
-                let cachedStats = await CacheService.shared.getStats()
+                _ = await CacheService.shared.getStats()
                 
                 // 从网络更新
                 let response = try await APIService.shared.fetchDiaries()

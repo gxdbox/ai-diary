@@ -9,6 +9,9 @@ class CachedDiary {
     var emotion: String?
     var emotionScore: Double?
     var emotionKeywords: [String]?
+    var secondaryEmotions: [String]?
+    var emotionDimension: String?
+    var emotionConfidence: Double?
     var topics: [String]?
     var keyEvents: [String]?
     var recordingDuration: Int?
@@ -16,14 +19,17 @@ class CachedDiary {
     var createdAt: Date
     var updatedAt: Date
     var cachedAt: Date
-    
-    init(id: Int, rawText: String, cleanedText: String?, emotion: String?, emotionScore: Double?, emotionKeywords: [String]?, topics: [String]?, keyEvents: [String]?, recordingDuration: Int?, wordCount: Int, createdAt: Date, updatedAt: Date) {
+
+    init(id: Int, rawText: String, cleanedText: String?, emotion: String?, emotionScore: Double?, emotionKeywords: [String]?, secondaryEmotions: [String]?, emotionDimension: String?, emotionConfidence: Double?, topics: [String]?, keyEvents: [String]?, recordingDuration: Int?, wordCount: Int, createdAt: Date, updatedAt: Date) {
         self.id = id
         self.rawText = rawText
         self.cleanedText = cleanedText
         self.emotion = emotion
         self.emotionScore = emotionScore
         self.emotionKeywords = emotionKeywords
+        self.secondaryEmotions = secondaryEmotions
+        self.emotionDimension = emotionDimension
+        self.emotionConfidence = emotionConfidence
         self.topics = topics
         self.keyEvents = keyEvents
         self.recordingDuration = recordingDuration
@@ -32,7 +38,7 @@ class CachedDiary {
         self.updatedAt = updatedAt
         self.cachedAt = Date()
     }
-    
+
     func toDiary() -> Diary {
         Diary(
             id: id,
@@ -41,6 +47,9 @@ class CachedDiary {
             emotion: emotion,
             emotionScore: emotionScore,
             emotionKeywords: emotionKeywords,
+            secondaryEmotions: secondaryEmotions,
+            emotionDimension: emotionDimension,
+            emotionConfidence: emotionConfidence,
             topics: topics,
             keyEvents: keyEvents,
             recordingDuration: recordingDuration,
@@ -58,7 +67,7 @@ class CachedStats {
     var streakDays: Int
     var averageEmotionScore: Double?
     var updatedAt: Date
-    
+
     init(totalDiaries: Int, totalWords: Int, streakDays: Int, averageEmotionScore: Double?) {
         self.totalDiaries = totalDiaries
         self.totalWords = totalWords

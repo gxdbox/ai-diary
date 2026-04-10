@@ -78,7 +78,7 @@ struct EmotionTrendChart: View {
             AxisMarks(values: .stride(by: .day, count: max(1, data.count / 5))) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                     .foregroundStyle(Color(hex: "E5E4E1"))
-                if let date = value.as(Date.self) {
+                if value.as(Date.self) != nil {
                     AxisValueLabel(format: .dateTime.month().day(), anchor: .top)
                         .font(.system(size: 10))
                         .foregroundStyle(Color(hex: "9C9B99"))

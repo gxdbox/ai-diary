@@ -9,6 +9,7 @@ struct AIDiaryApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
+                .preferredColorScheme(.light)  // 强制使用浅色模式
                 .task {
                     await appState.setup()
                 }

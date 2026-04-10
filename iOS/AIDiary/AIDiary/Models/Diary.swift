@@ -7,13 +7,16 @@ struct Diary: Codable, Identifiable, Hashable {
     let emotion: String?
     let emotionScore: Double?
     let emotionKeywords: [String]?
+    let secondaryEmotions: [String]?
+    let emotionDimension: String?
+    let emotionConfidence: Double?
     let topics: [String]?
     let keyEvents: [String]?
     let recordingDuration: Int?
     let wordCount: Int
     let createdAt: Date
     let updatedAt: Date
-    
+
     enum CodingKeys: String, CodingKey {
         case id
         case rawText = "raw_text"
@@ -21,6 +24,9 @@ struct Diary: Codable, Identifiable, Hashable {
         case emotion
         case emotionScore = "emotion_score"
         case emotionKeywords = "emotion_keywords"
+        case secondaryEmotions = "secondary_emotions"
+        case emotionDimension = "emotion_dimension"
+        case emotionConfidence = "emotion_confidence"
         case topics
         case keyEvents = "key_events"
         case recordingDuration = "recording_duration"

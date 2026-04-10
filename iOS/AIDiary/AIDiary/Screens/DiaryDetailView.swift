@@ -94,17 +94,56 @@ struct DiaryDetailView: View {
             }
 
             if let emotion = displayDiary.emotion {
-                HStack(spacing: 8) {
-                    Text(emotionEmoji)
-                        .font(.system(size: 20))
-                    Text(emotion)
-                        .font(.system(size: 16))
-                        .foregroundColor(Color(hex: "1A1918"))
+                VStack(alignment: .leading, spacing: 8) {
+                    // 主要情绪
+                    HStack(spacing: 8) {
+                        Text(emotionEmoji)
+                            .font(.system(size: 20))
+                        Text(emotion)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Color(hex: "1A1918"))
 
-                    if let score = displayDiary.emotionScore {
-                        Text("\(String(format: "%.1f", score))/10")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "3D8A5A"))
+                        if let score = displayDiary.emotionScore {
+                            Text("\(String(format: "%.1f", score))/10")
+                                .font(.system(size: 14))
+                                .foregroundColor(emotionDimensionColor)
+                        }
+
+                        // 情绪维度标签
+                        if let dimension = displayDiary.emotionDimension {
+                            Text(dimensionLabel(dimension))
+                                .font(.system(size: 11))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(emotionDimensionColor)
+                                .cornerRadius(4)
+                        }
+                    }
+
+                    // 次要情绪
+                    if let secondary = displayDiary.secondaryEmotions, !secondary.isEmpty {
+                        HStack(spacing: 6) {
+                            Text("伴随:")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color(hex: "9C9B99"))
+                            ForEach(secondary, id: \.self) { emo in
+                                Text(emo)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(Color(hex: "6D6C6A"))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color(hex: "F0EFEC"))
+                                    .cornerRadius(8)
+                            }
+                        }
+                    }
+
+                    // 信心度
+                    if let confidence = displayDiary.emotionConfidence, confidence < 0.7 {
+                        Text("情绪识别信心度较低")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(hex: "D89575"))
                     }
                 }
             }
@@ -280,16 +319,59 @@ struct DiaryDetailView: View {
     private var emotionEmoji: String {
         guard let emotion = displayDiary.emotion else { return "😊" }
         switch emotion {
-        case "开心", "满足", "兴奋", "愉快":
+        case "幸福", "快乐", "欣喜", "欢快", "高兴", "满足", "感恩", "自豪", "期待", "激动", "狂喜", "温情", "自信", "欣慰", "无忧无虑":
             return "😊"
-        case "难过", "沮丧", "悲伤":
+        case "悲伤", "忧郁", "悲痛", "惆怅", "失落", "孤独":
             return "😢"
-        case "愤怒", "生气":
+        case "愤怒", "愤恨", "狂怒", "暴躁", "不满":
             return "😠"
-        case "焦虑", "担心":
+        case "焦虑", "担忧", "恐慌", "恐惧", "惧怕", "不安":
             return "😰"
+        case "厌倦", "倦怠", "冷漠", "气馁":
+            return "😐"
+        case "困惑", "茫然", "不知所措":
+            return "😕"
+        case "羞耻", "内疚", "懊悔", "羞愤":
+            return "😳"
+        case "震惊", "惊骇", "惊讶":
+            return "😲"
+        case "怀旧思乡", "思乡", "乡愁":
+            return "🥺"
         default:
             return "😊"
+        }
+    }
+
+    private var emotionDimensionColor: Color {
+        guard let dimension = displayDiary.emotionDimension else {
+            return Color(hex: "3D8A5A")
+        }
+        switch dimension {
+        case "positive":
+            return Color(hex: "3D8A5A")
+        case "negative":
+            return Color(hex: "D89575")
+        case "mixed":
+            return Color(hex: "8B7EC8")
+        case "social":
+            return Color(hex: "5B9BD5")
+        default:
+            return Color(hex: "3D8A5A")
+        }
+    }
+
+    private func dimensionLabel(_ dimension: String) -> String {
+        switch dimension {
+        case "positive":
+            return "积极"
+        case "negative":
+            return "消极"
+        case "mixed":
+            return "复杂"
+        case "social":
+            return "社交"
+        default:
+            return ""
         }
     }
     
@@ -345,9 +427,12 @@ struct DiaryDetailView: View {
                 id: 1,
                 rawText: "测试日记",
                 cleanedText: "这是测试内容",
-                emotion: "开心",
+                emotion: "高兴",
                 emotionScore: 7.5,
                 emotionKeywords: ["开心"],
+                secondaryEmotions: ["期待"],
+                emotionDimension: "positive",
+                emotionConfidence: 0.85,
                 topics: ["工作", "生活"],
                 keyEvents: ["完成项目"],
                 recordingDuration: 120,

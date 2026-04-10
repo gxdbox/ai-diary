@@ -64,6 +64,9 @@ async def create_diary(
             emotion=analysis["emotion"].get("emotion"),
             emotion_score=analysis["emotion"].get("score"),
             emotion_keywords=json.dumps(analysis["emotion"].get("keywords", []), ensure_ascii=False),
+            secondary_emotions=json.dumps(analysis["emotion"].get("secondary_emotions", []), ensure_ascii=False),
+            emotion_dimension=analysis["emotion"].get("dimension"),
+            emotion_confidence=analysis["emotion"].get("confidence"),
             topics=json.dumps(analysis["topics"], ensure_ascii=False),
             key_events=json.dumps(analysis["key_events"], ensure_ascii=False),
             recording_duration=request.recording_duration,
@@ -219,6 +222,9 @@ async def update_diary(
         diary.emotion = analysis["emotion"].get("emotion")
         diary.emotion_score = analysis["emotion"].get("score")
         diary.emotion_keywords = json.dumps(analysis["emotion"].get("keywords", []), ensure_ascii=False)
+        diary.secondary_emotions = json.dumps(analysis["emotion"].get("secondary_emotions", []), ensure_ascii=False)
+        diary.emotion_dimension = analysis["emotion"].get("dimension")
+        diary.emotion_confidence = analysis["emotion"].get("confidence")
         diary.topics = json.dumps(analysis["topics"], ensure_ascii=False)
         diary.key_events = json.dumps(analysis["key_events"], ensure_ascii=False)
 
@@ -253,6 +259,9 @@ def _diary_to_response(diary: Diary) -> DiaryResponse:
         emotion=diary.emotion,
         emotion_score=diary.emotion_score,
         emotion_keywords=json.loads(diary.emotion_keywords) if diary.emotion_keywords else [],
+        secondary_emotions=json.loads(diary.secondary_emotions) if diary.secondary_emotions else [],
+        emotion_dimension=diary.emotion_dimension,
+        emotion_confidence=diary.emotion_confidence,
         topics=json.loads(diary.topics) if diary.topics else [],
         key_events=json.loads(diary.key_events) if diary.key_events else [],
         recording_duration=diary.recording_duration,

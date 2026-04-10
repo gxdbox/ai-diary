@@ -3,11 +3,11 @@ import SwiftData
 
 actor CacheService {
     static let shared = CacheService()
-    
+
     private var modelContainer: ModelContainer?
-    
+
     private init() {}
-    
+
     func setup() async {
         do {
             let schema = Schema([
@@ -21,11 +21,11 @@ actor CacheService {
             print("CacheService 初始化失败：\(error)")
         }
     }
-    
+
     func saveDiaries(_ diaries: [Diary]) async {
         guard let container = modelContainer else { return }
         let context = ModelContext(container)
-        
+
         for diary in diaries {
             let cachedDiary = CachedDiary(
                 id: diary.id,
@@ -34,6 +34,9 @@ actor CacheService {
                 emotion: diary.emotion,
                 emotionScore: diary.emotionScore,
                 emotionKeywords: diary.emotionKeywords,
+                secondaryEmotions: diary.secondaryEmotions,
+                emotionDimension: diary.emotionDimension,
+                emotionConfidence: diary.emotionConfidence,
                 topics: diary.topics,
                 keyEvents: diary.keyEvents,
                 recordingDuration: diary.recordingDuration,
@@ -43,14 +46,14 @@ actor CacheService {
             )
             context.insert(cachedDiary)
         }
-        
+
         try? context.save()
     }
-    
+
     func saveDiary(_ diary: Diary) async {
         guard let container = modelContainer else { return }
         let context = ModelContext(container)
-        
+
         // 先查找是否已存在
         let descriptor = FetchDescriptor<CachedDiary>(predicate: #Predicate { $0.id == diary.id })
         if let existing = try? context.fetch(descriptor).first {
@@ -60,6 +63,9 @@ actor CacheService {
             existing.emotion = diary.emotion
             existing.emotionScore = diary.emotionScore
             existing.emotionKeywords = diary.emotionKeywords
+            existing.secondaryEmotions = diary.secondaryEmotions
+            existing.emotionDimension = diary.emotionDimension
+            existing.emotionConfidence = diary.emotionConfidence
             existing.topics = diary.topics
             existing.keyEvents = diary.keyEvents
             existing.recordingDuration = diary.recordingDuration
@@ -76,6 +82,9 @@ actor CacheService {
                 emotion: diary.emotion,
                 emotionScore: diary.emotionScore,
                 emotionKeywords: diary.emotionKeywords,
+                secondaryEmotions: diary.secondaryEmotions,
+                emotionDimension: diary.emotionDimension,
+                emotionConfidence: diary.emotionConfidence,
                 topics: diary.topics,
                 keyEvents: diary.keyEvents,
                 recordingDuration: diary.recordingDuration,
@@ -87,42 +96,42 @@ actor CacheService {
         }
         try? context.save()
     }
-    
+
     func deleteDiary(id: Int) async {
         guard let container = modelContainer else { return }
         let context = ModelContext(container)
-        
+
         let descriptor = FetchDescriptor<CachedDiary>(predicate: #Predicate { $0.id == id })
         if let cachedDiary = try? context.fetch(descriptor).first {
             context.delete(cachedDiary)
             try? context.save()
         }
     }
-    
+
     func getAllDiaries() async -> [Diary] {
         guard let container = modelContainer else { return [] }
         let context = ModelContext(container)
-        
+
         let descriptor = FetchDescriptor<CachedDiary>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
         guard let cachedDiaries = try? context.fetch(descriptor) else { return [] }
-        
+
         return cachedDiaries.map { $0.toDiary() }
     }
-    
+
     func getDiary(id: Int) async -> Diary? {
         guard let container = modelContainer else { return nil }
         let context = ModelContext(container)
-        
+
         let descriptor = FetchDescriptor<CachedDiary>(predicate: #Predicate { $0.id == id })
         guard let cachedDiary = try? context.fetch(descriptor).first else { return nil }
-        
+
         return cachedDiary.toDiary()
     }
-    
+
     func saveStats(_ stats: Stats) async {
         guard let container = modelContainer else { return }
         let context = ModelContext(container)
-        
+
         let descriptor = FetchDescriptor<CachedStats>()
         if let cachedStats = try? context.fetch(descriptor).first {
             cachedStats.totalDiaries = stats.totalDiaries
@@ -141,14 +150,14 @@ actor CacheService {
         }
         try? context.save()
     }
-    
+
     func getStats() async -> Stats? {
         guard let container = modelContainer else { return nil }
         let context = ModelContext(container)
-        
+
         let descriptor = FetchDescriptor<CachedStats>()
         guard let cachedStats = try? context.fetch(descriptor).first else { return nil }
-        
+
         return Stats(
             totalDiaries: cachedStats.totalDiaries,
             totalWords: cachedStats.totalWords,
@@ -156,11 +165,11 @@ actor CacheService {
             averageEmotionScore: cachedStats.averageEmotionScore
         )
     }
-    
+
     func clearAll() async {
         guard let container = modelContainer else { return }
         let context = ModelContext(container)
-        
+
         try? context.delete(model: CachedDiary.self)
         try? context.delete(model: CachedStats.self)
         try? context.save()

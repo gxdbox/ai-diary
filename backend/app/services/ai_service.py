@@ -8,6 +8,8 @@ from typing import Dict, List, Optional
 import logging
 import asyncio
 
+from app.data.emotions import EMOTION_VOCABULARY, EMOTION_DIMENSIONS
+
 logger = logging.getLogger(__name__)
 
 # DeepSeek API配置
@@ -58,7 +60,6 @@ class AIService:
 
         except Exception as e:
             logger.error(f"AI服务异常: {str(e)}")
-            # 返回模拟响应以便测试
             return self._mock_response(prompt)
 
     def _mock_response(self, prompt: str) -> str:
@@ -66,7 +67,7 @@ class AIService:
         if "清洗" in prompt or "删除口语填充词" in prompt:
             return "今天天气不错，我想出去走走。周末约朋友吃饭吧。"
         elif "情绪" in prompt and "JSON" in prompt:
-            return '{"emotion": "开心", "score": 7.5, "keywords": ["不错", "约朋友"]}'
+            return '{"emotion": "高兴", "secondary_emotions": ["期待"], "dimension": "positive", "score": 7.5, "keywords": ["不错", "约朋友"], "confidence": 0.85}'
         elif "主题" in prompt or "标签" in prompt:
             return "生活,社交"
         elif "关键事件" in prompt:
@@ -94,17 +95,45 @@ class AIService:
         return result.strip()
 
     async def analyze_emotion(self, text: str) -> Dict:
-        """分析文本情绪"""
+        """分析文本情绪 - 使用精细化的情绪分类体系"""
 
-        prompt = f"""请分析以下日记内容的情绪状态，以JSON格式返回结果：
+        # 构建情绪词汇表提示（分组展示）
+        emotion_groups = {
+            "积极情绪": ["幸福", "快乐", "欣喜", "欢快", "高兴", "满足", "感恩", "自豪", "期待", "激动", "狂喜", "温情", "自信", "欣慰", "无忧无虑", "如释重负", "归家之喜", "温馨", "冷静"],
+            "消极情绪": ["愤怒", "焦虑", "悲伤", "恐惧", "绝望", "沮丧", "忧郁", "孤独", "内疚", "羞耻", "懊悔", "遗憾", "愤恨", "嫉妒", "不满", "气恼", "困惑", "震惊", "恐慌", "厌倦", "冷漠", "气馁", "失望", "厌恶", "惧怕", "尴尬", "仇恨", "不堪重负", "烦躁", "担忧"],
+            "复杂情绪": ["怀旧思乡", "惆怅", "物哀", "隐忍", "人去心空", "异境茫然", "失落", "矛盾", "乡愁", "悲天悯人"],
+            "社交情绪": ["共情", "同情", "幸灾乐祸", "替人脸红", "怕麻烦别人", "妒忌", "竞争", "义愤", "怜悯"],
+        }
 
+        # 构建提示词
+        emotion_list_parts = []
+        for group, emotions in emotion_groups.items():
+            emotion_list_parts.append(f"\n【{group}】\n{', '.join(emotions)}")
+
+        emotion_list = "".join(emotion_list_parts)
+
+        prompt = f"""你是一个专业的情绪分析专家。请分析以下日记内容，从给定的情绪词汇中选择最匹配的情绪。
+
+【日记内容】
 {text}
+
+【情绪词汇表】（基于《心情词典》精细化分类）
+{emotion_list}
+
+【分析要求】
+1. 从词汇表中选择最匹配的情绪词（可以选择主要情绪和次要情绪）
+2. 判断情绪维度：positive（积极）、negative（消极）、mixed（复杂）、social（社交相关）
+3. 评估情绪强度（1-10）
+4. 提取表达情绪的关键词
 
 请返回以下JSON格式（仅返回JSON，不要其他内容）：
 {{
-    "emotion": "情绪类型（开心/焦虑/平静/愤怒/悲伤/兴奋/疲惫/满足等）",
-    "score": 情绪强度（1-10的数字，1最弱，10最强）,
-    "keywords": ["情绪关键词1", "情绪关键词2", "情绪关键词3"]
+    "emotion": "主要情绪（从词汇表中选择一个最匹配的）",
+    "secondary_emotions": ["次要情绪1", "次要情绪2"],
+    "dimension": "情绪维度（positive/negative/mixed/social）",
+    "score": 情绪强度（1-10）,
+    "keywords": ["关键词1", "关键词2"],
+    "confidence": 信心度（0.0-1.0）
 }}"""
 
         result = await self.call_llm(prompt)
@@ -117,14 +146,54 @@ class AIService:
             elif "```" in json_str:
                 json_str = json_str.split("```")[1].split("```")[0]
 
-            return json.loads(json_str)
+            parsed = json.loads(json_str)
+
+            # 验证并修正情绪词
+            primary = parsed.get("emotion", "冷静")
+            primary = self._validate_emotion(primary)
+
+            return {
+                "emotion": primary,
+                "secondary_emotions": parsed.get("secondary_emotions", [])[:2],
+                "dimension": parsed.get("dimension", "mixed"),
+                "score": float(parsed.get("score", 5.0)),
+                "keywords": parsed.get("keywords", [])[:5],
+                "confidence": float(parsed.get("confidence", 0.8))
+            }
         except json.JSONDecodeError:
             logger.warning(f"JSON解析失败，使用默认值: {result}")
             return {
-                "emotion": "平静",
+                "emotion": "冷静",
+                "secondary_emotions": [],
+                "dimension": "mixed",
                 "score": 5.0,
-                "keywords": []
+                "keywords": [],
+                "confidence": 0.5
             }
+
+    def _validate_emotion(self, emotion: str) -> str:
+        """验证情绪词是否在词汇表中，否则映射到最接近的"""
+        # 常见情绪映射表
+        mapping = {
+            "开心": "高兴",
+            "难过": "悲伤",
+            "伤心": "悲伤",
+            "生气": "愤怒",
+            "害怕": "恐惧",
+            "担心": "担忧",
+            "着急": "焦虑",
+            "烦躁": "厌倦",
+            "郁闷": "忧郁",
+            "失落": "惆怅",
+            "无聊": "厌倦",
+            "平静": "冷静",
+            "放松": "无忧无虑",
+            "累": "倦怠",
+            "疲惫": "倦怠",
+            "兴奋": "激动",
+            "倦怠": "倦怠",
+        }
+        return mapping.get(emotion, emotion)
 
     async def extract_topics(self, text: str) -> List[str]:
         """提取文本主题标签"""
