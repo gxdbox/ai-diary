@@ -8,6 +8,7 @@ struct ContentView: View {
         case record = "录音"
         case search = "搜索"
         case analytics = "分析"
+        case settings = "我的"
     }
     
     var body: some View {
@@ -36,6 +37,8 @@ struct ContentView: View {
             SearchView()
         case .analytics:
             AnalyticsView()
+        case .settings:
+            SettingsView()
         }
     }
 }
@@ -47,7 +50,8 @@ struct TabBarView: View {
         .timeline: "📅",
         .record: "🎤",
         .search: "🔍",
-        .analytics: "📊"
+        .analytics: "📊",
+        .settings: "😊"
     ]
     
     var body: some View {

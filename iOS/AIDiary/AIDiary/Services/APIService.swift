@@ -2,9 +2,11 @@ import Foundation
 
 class APIService {
     static let shared = APIService()
-    
-    private let baseURL = "http://192.168.0.2:8000"
-    
+
+    private var baseURL: String {
+        AppConfig.baseURL
+    }
+
     private init() {}
     
     private let dateFormatter: DateFormatter = {

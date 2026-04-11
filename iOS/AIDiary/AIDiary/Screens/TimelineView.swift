@@ -115,17 +115,17 @@ struct TimelineView: View {
             do {
                 // 先从缓存加载
                 let cachedDiaries = await CacheService.shared.getAllDiaries()
-                _ = await CacheService.shared.getStats()
-                
+                let cachedStats = await CacheService.shared.getStats()
+
                 // 从网络更新
                 let response = try await APIService.shared.fetchDiaries()
                 let statsData = try await APIService.shared.fetchStats()
-                
+
                 // 合并数据：缓存中的优先（包含编辑过的）
                 // 用缓存中的日记替换网络中的同 ID 日记
                 var mergedDiaries: [Diary] = []
                 var cachedDict = Dictionary(grouping: cachedDiaries, by: { $0.id })
-                
+
                 for networkDiary in response.items {
                     if let cached = cachedDict[networkDiary.id]?.first {
                         // 缓存中有，用缓存的（可能编辑过）
@@ -136,27 +136,34 @@ struct TimelineView: View {
                         mergedDiaries.append(networkDiary)
                     }
                 }
-                
+
                 // 添加缓存中独有的日记（网络中没有的）
                 for (_, cachedList) in cachedDict {
                     mergedDiaries.append(contentsOf: cachedList)
                 }
-                
+
                 // 按创建时间排序
                 mergedDiaries.sort { $0.createdAt > $1.createdAt }
-                
+
                 // 保存到缓存
                 await CacheService.shared.saveDiaries(mergedDiaries)
                 await CacheService.shared.saveStats(statsData)
-                
+
                 await MainActor.run {
                     diaries = mergedDiaries
                     stats = statsData
                     isLoading = false
                 }
             } catch {
+                // 网络失败时，显示缓存数据
+                let cachedDiaries = await CacheService.shared.getAllDiaries()
+                let cachedStats = await CacheService.shared.getStats()
+
                 await MainActor.run {
+                    diaries = cachedDiaries
+                    stats = cachedStats
                     isLoading = false
+                    print("网络请求失败，使用缓存数据: \(error)")
                 }
             }
         }
