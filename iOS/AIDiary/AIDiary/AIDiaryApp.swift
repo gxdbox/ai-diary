@@ -4,15 +4,22 @@ import Combine
 @main
 struct AIDiaryApp: App {
     @StateObject private var appState = AppState()
-    
+    @State private var showSplash = true
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(appState)
-                .preferredColorScheme(.light)  // 强制使用浅色模式
-                .task {
-                    await appState.setup()
+            ZStack {
+                if showSplash {
+                    SplashScreen(isActive: $showSplash)
+                } else {
+                    ContentView()
+                        .environmentObject(appState)
+                        .preferredColorScheme(.light)
+                        .task {
+                            await appState.setup()
+                        }
                 }
+            }
         }
     }
 }
