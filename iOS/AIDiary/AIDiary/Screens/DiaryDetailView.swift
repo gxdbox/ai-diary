@@ -10,6 +10,7 @@ struct DiaryDetailView: View {
     @State private var isEditing = false
     @State private var editedText: String = ""
     @State private var isSavingEdit = false
+    @State private var showCopySuccess = false
     @State private var currentDiary: Diary?  // 当前显示的日记（可能被更新）
     
     var body: some View {
@@ -36,21 +37,32 @@ struct DiaryDetailView: View {
                 Button {
                     dismiss()
                 } label: {
-                    Text("<")
-                        .font(.system(size: 24))
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 20, weight: .medium))
                         .foregroundColor(Color(hex: "1A1918"))
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showDeleteConfirm = true
-                } label: {
-                    if isDeleting {
-                        ProgressView()
-                            .tint(Color(hex: "1A1918"))
-                    } else {
-                        Text("🗑️")
-                            .font(.system(size: 20))
+                HStack(spacing: 16) {
+                    Button {
+                        copyDiary()
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 18))
+                            .foregroundColor(Color(hex: "8B7EC8"))
+                    }
+
+                    Button {
+                        showDeleteConfirm = true
+                    } label: {
+                        if isDeleting {
+                            ProgressView()
+                                .tint(Color(hex: "1A1918"))
+                        } else {
+                            Image(systemName: "trash")
+                                .font(.system(size: 18))
+                                .foregroundColor(Color(hex: "D08068"))
+                        }
                     }
                 }
             }
@@ -63,6 +75,35 @@ struct DiaryDetailView: View {
         } message: {
             Text("此操作不可撤销")
         }
+        .overlay(
+            Group {
+                if showCopySuccess {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Text("已复制到剪贴板")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color(hex: "3D8A5A"))
+                                .cornerRadius(8)
+                            Spacer()
+                        }
+                        .padding(.bottom, 100)
+                    }
+                    .transition(.opacity)
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation {
+                                showCopySuccess = false
+                            }
+                        }
+                    }
+                }
+            }
+        )
     }
     
     private var displayDiary: Diary {
@@ -416,6 +457,14 @@ struct DiaryDetailView: View {
                     print("更新日记失败：\(error)")
                 }
             }
+        }
+    }
+
+    private func copyDiary() {
+        let text = displayDiary.cleanedText ?? displayDiary.rawText
+        UIPasteboard.general.string = text
+        withAnimation {
+            showCopySuccess = true
         }
     }
 }
