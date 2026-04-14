@@ -390,62 +390,61 @@ struct DiaryCardView: View {
     }
 
     var body: some View {
-        Button {
-            onTap(diary)
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(diary.cleanedText ?? diary.rawText)
-                    .font(.system(size: 15))
-                    .foregroundColor(Color(hex: "1A1918"))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(diary.cleanedText ?? diary.rawText)
+                .font(.system(size: 15))
+                .foregroundColor(Color(hex: "1A1918"))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
 
-                HStack {
-                    if let emotion = diary.emotion {
-                        Text(emotion)
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: "3D8A5A"))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(hex: "C8F0D8"))
-                            .cornerRadius(8)
-                    }
-
-                    Text(diary.createdAt.formatted(date: .abbreviated, time: .omitted))
+            HStack {
+                if let emotion = diary.emotion {
+                    Text(emotion)
                         .font(.system(size: 12))
-                        .foregroundColor(Color(hex: "9C9B99"))
+                        .foregroundColor(Color(hex: "3D8A5A"))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(hex: "C8F0D8"))
+                        .cornerRadius(8)
+                }
 
-                    Spacer()
+                Text(diary.createdAt.formatted(date: .abbreviated, time: .omitted))
+                    .font(.system(size: 12))
+                    .foregroundColor(Color(hex: "9C9B99"))
 
-                    Text("\(diary.wordCount)字")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(hex: "9C9B99"))
+                Spacer()
+
+                Text("\(diary.wordCount)字")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color(hex: "9C9B99"))
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white)
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.clear, lineWidth: 0)
+        )
+        .overlay(
+            Group {
+                if isToday {
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color(hex: "8B7EC8"), Color(hex: "6BB6D6")],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2
+                        )
                 }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white)
-            .cornerRadius(16)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.clear, lineWidth: 0)
-            )
-            .overlay(
-                Group {
-                    if isToday {
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [Color(hex: "8B7EC8"), Color(hex: "6BB6D6")],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 2
-                            )
-                    }
-                }
-            )
-            .shadow(color: Color.black.opacity(0.08), radius: 12, y: 2)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 12, y: 2)
+        .onTapGesture {
+            onTap(diary)
         }
     }
 }
@@ -495,9 +494,19 @@ struct SwipeableDiaryCard: View {
             }
 
             // 卡片内容
-            DiaryCardView(diary: diary, onTap: onTap)
+            DiaryCardView(diary: diary, onTap: { diary in
+                // 点击卡片时隐藏删除按钮
+                if showDeleteButton {
+                    withAnimation {
+                        offset = 0
+                        showDeleteButton = false
+                    }
+                } else {
+                    onTap(diary)
+                }
+            })
                 .offset(x: offset)
-                .gesture(
+                .simultaneousGesture(
                     DragGesture()
                         .onChanged { value in
                             // 只允许左滑
@@ -523,15 +532,6 @@ struct SwipeableDiaryCard: View {
                             }
                         }
                 )
-                .onTapGesture {
-                    // 点击卡片时隐藏删除按钮
-                    if showDeleteButton {
-                        withAnimation {
-                            offset = 0
-                            showDeleteButton = false
-                        }
-                    }
-                }
         }
         .frame(maxWidth: .infinity)
     }
