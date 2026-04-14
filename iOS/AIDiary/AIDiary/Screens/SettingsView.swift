@@ -4,6 +4,7 @@ struct SettingsView: View {
     @State private var autoCleanText = true
     @State private var localEncryption = true
     @State private var faceIDEnabled = false
+    @State private var showDictionary = false
 
     var body: some View {
         ScrollView {
@@ -28,6 +29,9 @@ struct SettingsView: View {
             .padding(.bottom, 100)
         }
         .background(Color(hex: "F5F4F1"))
+        .sheet(isPresented: $showDictionary) {
+            DictionaryView()
+        }
     }
 
     private var statusBarPlaceholder: some View {
@@ -81,6 +85,22 @@ struct SettingsView: View {
             settingToggle("自动清洗文本", isOn: $autoCleanText)
             divider()
             settingItem("录音质量", value: "标准", showArrow: true)
+            divider()
+            Button {
+                showDictionary = true
+            } label: {
+                HStack {
+                    Text("自定义词典")
+                        .font(.system(size: 15))
+                        .foregroundColor(Color(hex: "1A1918"))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14))
+                        .foregroundColor(Color(hex: "9C9B99"))
+                }
+                .padding(.vertical, 14)
+                .padding(.horizontal, 16)
+            }
         }
         .padding(16)
         .background(Color.white)

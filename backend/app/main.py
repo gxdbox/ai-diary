@@ -7,8 +7,8 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import diary, analysis, search
-from app.db.database import init_db
+from app.api import diary, analysis, search, dictionary
+from app.db.database import init_db, async_session_maker
 
 app = FastAPI(
     title="AI日记API",
@@ -29,12 +29,16 @@ app.add_middleware(
 app.include_router(diary.router, prefix="/api/diary", tags=["日记"])
 app.include_router(analysis.router, prefix="/api/analysis", tags=["分析"])
 app.include_router(search.router, prefix="/api/search", tags=["搜索"])
+app.include_router(dictionary.router, prefix="/api/dictionary", tags=["词典"])
 
 
 @app.on_event("startup")
 async def startup():
-    """应用启动时初始化数据库"""
+    """应用启动时初始化数据库和词典缓存"""
     await init_db()
+    # 加载词典缓存
+    async with async_session_maker() as db:
+        await dictionary.load_dictionary_cache(db)
 
 
 @app.get("/")

@@ -118,8 +118,24 @@ struct RelatedDiary: Codable {
     let id: Int
     let text: String
     let score: Double
-    
+
     enum CodingKeys: String, CodingKey {
         case id, text, score
     }
+}
+
+struct FilterOptions: Codable {
+    let emotions: [String]
+    let topics: [String]
+}
+
+struct DictionaryEntry: Codable, Identifiable {
+    let id: Int
+    let word: String
+    let pinyin: String
+}
+
+struct DictionaryListResponse: Codable {
+    let entries: [DictionaryEntry]
+    let total: Int
 }

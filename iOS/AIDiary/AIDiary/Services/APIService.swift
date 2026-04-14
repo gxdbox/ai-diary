@@ -23,8 +23,35 @@ class APIService {
         return try decoder.decode(T.self, from: data)
     }
     
-    func fetchDiaries(page: Int = 1, pageSize: Int = 20) async throws -> DiaryListResponse {
-        let url = URL(string: "\(baseURL)/api/diary/list?page=\(page)&page_size=\(pageSize)")!
+    func fetchDiaries(page: Int = 1, pageSize: Int = 20, emotion: String? = nil, topic: String? = nil, startDate: String? = nil, endDate: String? = nil) async throws -> DiaryListResponse {
+        var urlComponents = URLComponents(string: "\(baseURL)/api/diary/list")!
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "page", value: "\(page)"),
+            URLQueryItem(name: "page_size", value: "\(pageSize)")
+        ]
+
+        if let emotion = emotion {
+            queryItems.append(URLQueryItem(name: "emotion", value: emotion))
+        }
+        if let topic = topic {
+            queryItems.append(URLQueryItem(name: "topic", value: topic))
+        }
+        if let startDate = startDate {
+            queryItems.append(URLQueryItem(name: "start_date", value: startDate))
+        }
+        if let endDate = endDate {
+            queryItems.append(URLQueryItem(name: "end_date", value: endDate))
+        }
+
+        urlComponents.queryItems = queryItems
+        let url = urlComponents.url!
+
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try decode(data)
+    }
+
+    func fetchFilters() async throws -> FilterOptions {
+        let url = URL(string: "\(baseURL)/api/diary/filters")!
         let (data, _) = try await URLSession.shared.data(from: url)
         return try decode(data)
     }
@@ -98,12 +125,49 @@ class APIService {
         guard let url = URL(string: urlString) else {
             throw URLError(.badURL)
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [:])
-        
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try decode(data)
+    }
+
+    // ============ 词典相关 API ============
+
+    func fetchDictionary() async throws -> DictionaryListResponse {
+        let url = URL(string: "\(baseURL)/api/dictionary/list")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try decode(data)
+    }
+
+    func addDictionaryEntry(word: String) async throws -> DictionaryEntry {
+        var request = URLRequest(url: URL(string: "\(baseURL)/api/dictionary/add")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["word": word])
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try decode(data)
+    }
+
+    func deleteDictionaryEntry(id: Int) async throws {
+        var request = URLRequest(url: URL(string: "\(baseURL)/api/dictionary/\(id)")!)
+        request.httpMethod = "DELETE"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    func updateDictionaryEntry(id: Int, word: String) async throws -> DictionaryEntry {
+        var request = URLRequest(url: URL(string: "\(baseURL)/api/dictionary/\(id)")!)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["word": word])
+
         let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)
     }

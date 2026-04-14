@@ -9,6 +9,7 @@ import logging
 import asyncio
 
 from app.data.emotions import EMOTION_VOCABULARY, EMOTION_DIMENSIONS
+from app.api.dictionary import apply_dictionary_correction
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,10 @@ class AIService:
     async def clean_text(self, raw_text: str) -> str:
         """清洗语音转写文本"""
 
+        # 1. 先应用词典校正
+        corrected_text = apply_dictionary_correction(raw_text)
+
+        # 2. AI 清洗
         prompt = f"""你是一个专业的文本编辑助手。请清洗以下语音转文字的日记内容：
 
 1. 删除口语填充词（嗯、啊、哈、那个、就是、然后呢、这个等）
@@ -87,7 +92,7 @@ class AIService:
 5. 适当调整标点符号，让阅读更流畅
 
 原文：
-{raw_text}
+{corrected_text}
 
 请直接输出清洗后的文本，不要有任何解释或额外内容。"""
 

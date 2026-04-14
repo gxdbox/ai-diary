@@ -6,6 +6,7 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime
 from datetime import datetime
 import os
+import json
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./ai_diary.db")
 
@@ -32,6 +33,17 @@ class Diary(Base):
     key_events = Column(Text, nullable=True, comment="关键事件JSON")
     recording_duration = Column(Integer, nullable=True, comment="录音时长(秒)")
     word_count = Column(Integer, default=0, comment="字数")
+    created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+
+
+class DictionaryEntry(Base):
+    """自定义词典模型"""
+    __tablename__ = "dictionary"
+
+    id = Column(Integer, primary_key=True, index=True)
+    word = Column(String(100), nullable=False, comment="正确词")
+    pinyin = Column(String(200), nullable=False, comment="拼音（用于同音词匹配）")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
