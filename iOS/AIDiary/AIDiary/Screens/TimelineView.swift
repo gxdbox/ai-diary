@@ -6,13 +6,48 @@ struct TimelineView: View {
     @State private var isLoading = false
     @State private var stats: Stats?
     @State private var selectedDiary: Diary?
-    
+    @State private var showFilterSheet = false
+    @State private var filterOptions: FilterOptions?
+    @State private var selectedEmotion: String?
+    @State private var selectedTopic: String?
+    @State private var selectedTimeRange: TimeRange = .all
+    @State private var deletingDiaryId: Int? = nil
+    @State private var showDeleteConfirm = false
+
+    enum TimeRange: String, CaseIterable {
+        case today = "今天"
+        case week = "本周"
+        case month = "本月"
+        case all = "全部"
+
+        func toDateRange() -> (start: String?, end: String?) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let today = Date()
+
+            switch self {
+            case .today:
+                return (formatter.string(from: today), formatter.string(from: today))
+            case .week:
+                let weekStart = Calendar.current.date(byAdding: .day, value: -7, to: today)!
+                return (formatter.string(from: weekStart), formatter.string(from: today))
+            case .month:
+                let monthStart = Calendar.current.date(byAdding: .day, value: -30, to: today)!
+                return (formatter.string(from: monthStart), formatter.string(from: today))
+            case .all:
+                return (nil, nil)
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 statusBarPlaceholder
 
                 header
+
+                filterButtons
 
                 if isLoading {
                     loadingView
@@ -28,34 +63,59 @@ struct TimelineView: View {
             }
             .onAppear {
                 loadData()
+                loadFilterOptions()
             }
             .onReceive(NotificationCenter.default.publisher(for: .diaryDidDelete)) { _ in
                 loadData()
             }
             .onReceive(NotificationCenter.default.publisher(for: .diaryDidCreate)) { _ in
                 loadData()
+                loadFilterOptions()
             }
             .onReceive(NotificationCenter.default.publisher(for: .diaryDidUpdate)) { _ in
                 loadData()
             }
+            .sheet(isPresented: $showFilterSheet) {
+                FilterSheet(
+                    selectedEmotion: $selectedEmotion,
+                    selectedTopic: $selectedTopic,
+                    selectedTimeRange: $selectedTimeRange,
+                    filterOptions: filterOptions,
+                    onApply: {
+                        loadData()
+                    }
+                )
+            }
+            .alert("确定删除这篇日记吗？", isPresented: $showDeleteConfirm) {
+                Button("删除", role: .destructive) {
+                    if let diaryId = deletingDiaryId {
+                        deleteDiary(id: diaryId)
+                    }
+                }
+                Button("取消", role: .cancel) {
+                    deletingDiaryId = nil
+                }
+            } message: {
+                Text("此操作不可撤销")
+            }
         }
     }
-    
+
     private var statusBarPlaceholder: some View {
         Color.clear.frame(height: 62)
     }
-    
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("我的日记")
                 .font(.system(size: 26, weight: .semibold))
                 .foregroundColor(Color(hex: "1A1918"))
-            
+
             HStack(spacing: 16) {
                 Text("已记录 \(stats?.totalDiaries ?? diaries.count) 篇")
                     .font(.system(size: 14))
                     .foregroundColor(Color(hex: "6D6C6A"))
-                
+
                 if let streak = stats?.streakDays, streak > 0 {
                     Text("🔥 连续 \(streak) 天")
                         .font(.system(size: 14))
@@ -65,9 +125,49 @@ struct TimelineView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 24)
-        .padding(.bottom, 16)
+        .padding(.bottom, 12)
     }
-    
+
+    private var filterButtons: some View {
+        HStack(spacing: 8) {
+            FilterChip(
+                title: selectedEmotion ?? "情绪",
+                isSelected: selectedEmotion != nil,
+                icon: "😊"
+            ) {
+                showFilterSheet = true
+            }
+
+            FilterChip(
+                title: selectedTopic ?? "主题",
+                isSelected: selectedTopic != nil,
+                icon: "🏷️"
+            ) {
+                showFilterSheet = true
+            }
+
+            FilterChip(
+                title: selectedTimeRange.rawValue,
+                isSelected: selectedTimeRange != .all,
+                icon: "📅"
+            ) {
+                showFilterSheet = true
+            }
+
+            if selectedEmotion != nil || selectedTopic != nil || selectedTimeRange != .all {
+                Button {
+                    clearFilters()
+                } label: {
+                    Text("清除")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(hex: "8B7EC8"))
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+    }
+
     private var loadingView: some View {
         VStack {
             Spacer()
@@ -76,7 +176,7 @@ struct TimelineView: View {
             Spacer()
         }
     }
-    
+
     private var emptyView: some View {
         VStack(spacing: 16) {
             Spacer()
@@ -91,14 +191,21 @@ struct TimelineView: View {
             Spacer()
         }
     }
-    
+
     private var diaryList: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 ForEach(diaries) { diary in
-                    DiaryCardView(diary: diary, onTap: { selected in
-                        selectedDiary = selected
-                    })
+                    SwipeableDiaryCard(
+                        diary: diary,
+                        onTap: { selected in
+                            selectedDiary = selected
+                        },
+                        onDelete: {
+                            deletingDiaryId = diary.id
+                            showDeleteConfirm = true
+                        }
+                    )
                 }
             }
             .padding(.horizontal, 16)
@@ -108,46 +215,57 @@ struct TimelineView: View {
             await refreshData()
         }
     }
-    
+
+    private func deleteDiary(id: Int) {
+        Task {
+            do {
+                try await APIService.shared.deleteDiary(id: id)
+                await CacheService.shared.deleteDiary(id: id)
+                await MainActor.run {
+                    diaries.removeAll { $0.id == id }
+                    deletingDiaryId = nil
+                    NotificationCenter.default.post(name: .diaryDidDelete, object: nil)
+                }
+            } catch {
+                print("删除失败: \(error)")
+            }
+        }
+    }
+
     private func loadData() {
         isLoading = true
         Task {
             do {
-                // 先从缓存加载
-                let cachedDiaries = await CacheService.shared.getAllDiaries()
-                let cachedStats = await CacheService.shared.getStats()
-
-                // 从网络更新
-                let response = try await APIService.shared.fetchDiaries()
+                let dateRange = selectedTimeRange.toDateRange()
+                let response = try await APIService.shared.fetchDiaries(
+                    emotion: selectedEmotion,
+                    topic: selectedTopic,
+                    startDate: dateRange.start,
+                    endDate: dateRange.end
+                )
                 let statsData = try await APIService.shared.fetchStats()
 
-                // 合并数据：缓存中的优先（包含编辑过的）
-                // 用缓存中的日记替换网络中的同 ID 日记
+                // 获取缓存数据合并
+                let cachedDiaries = await CacheService.shared.getAllDiaries()
                 var mergedDiaries: [Diary] = []
                 var cachedDict = Dictionary(grouping: cachedDiaries, by: { $0.id })
 
                 for networkDiary in response.items {
                     if let cached = cachedDict[networkDiary.id]?.first {
-                        // 缓存中有，用缓存的（可能编辑过）
                         mergedDiaries.append(cached)
                         cachedDict[networkDiary.id] = nil
                     } else {
-                        // 缓存中没有，用网络的
                         mergedDiaries.append(networkDiary)
                     }
                 }
 
-                // 添加缓存中独有的日记（网络中没有的）
                 for (_, cachedList) in cachedDict {
                     mergedDiaries.append(contentsOf: cachedList)
                 }
 
-                // 按创建时间排序
                 mergedDiaries.sort { $0.createdAt > $1.createdAt }
 
-                // 保存到缓存
                 await CacheService.shared.saveDiaries(mergedDiaries)
-                await CacheService.shared.saveStats(statsData)
 
                 await MainActor.run {
                     diaries = mergedDiaries
@@ -155,7 +273,6 @@ struct TimelineView: View {
                     isLoading = false
                 }
             } catch {
-                // 网络失败时，显示缓存数据
                 let cachedDiaries = await CacheService.shared.getAllDiaries()
                 let cachedStats = await CacheService.shared.getStats()
 
@@ -168,21 +285,36 @@ struct TimelineView: View {
             }
         }
     }
-    
+
+    private func loadFilterOptions() {
+        Task {
+            do {
+                let options = try await APIService.shared.fetchFilters()
+                await MainActor.run {
+                    filterOptions = options
+                }
+            } catch {
+                print("获取筛选选项失败: \(error)")
+            }
+        }
+    }
+
     private func refreshData() async {
         isLoading = true
         do {
-            // 从网络刷新
-            let response = try await APIService.shared.fetchDiaries()
+            let dateRange = selectedTimeRange.toDateRange()
+            let response = try await APIService.shared.fetchDiaries(
+                emotion: selectedEmotion,
+                topic: selectedTopic,
+                startDate: dateRange.start,
+                endDate: dateRange.end
+            )
             let statsData = try await APIService.shared.fetchStats()
-            
-            // 获取缓存数据（包含编辑过的）
+
             let cachedDiaries = await CacheService.shared.getAllDiaries()
-            
-            // 合并数据：缓存中的优先
             var mergedDiaries: [Diary] = []
             var cachedDict = Dictionary(grouping: cachedDiaries, by: { $0.id })
-            
+
             for networkDiary in response.items {
                 if let cached = cachedDict[networkDiary.id]?.first {
                     mergedDiaries.append(cached)
@@ -191,17 +323,15 @@ struct TimelineView: View {
                     mergedDiaries.append(networkDiary)
                 }
             }
-            
+
             for (_, cachedList) in cachedDict {
                 mergedDiaries.append(contentsOf: cachedList)
             }
-            
+
             mergedDiaries.sort { $0.createdAt > $1.createdAt }
-            
-            // 更新缓存
+
             await CacheService.shared.saveDiaries(mergedDiaries)
-            await CacheService.shared.saveStats(statsData)
-            
+
             await MainActor.run {
                 diaries = mergedDiaries
                 stats = statsData
@@ -213,12 +343,52 @@ struct TimelineView: View {
             }
         }
     }
+
+    private func clearFilters() {
+        selectedEmotion = nil
+        selectedTopic = nil
+        selectedTimeRange = .all
+        loadData()
+    }
+}
+
+struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let icon: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(icon)
+                    .font(.system(size: 12))
+                Text(title)
+                    .font(.system(size: 12))
+                    .foregroundColor(isSelected ? .white : Color(hex: "6D6C6A"))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(isSelected ? Color(hex: "8B7EC8") : Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(isSelected ? Color(hex: "8B7EC8") : Color(hex: "E5E4E1"), lineWidth: 1)
+            )
+        }
+    }
 }
 
 struct DiaryCardView: View {
     let diary: Diary
     let onTap: (Diary) -> Void
-    
+
+    private var isToday: Bool {
+        Calendar.current.isDateInToday(diary.createdAt)
+    }
+
     var body: some View {
         Button {
             onTap(diary)
@@ -229,7 +399,7 @@ struct DiaryCardView: View {
                     .foregroundColor(Color(hex: "1A1918"))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                
+
                 HStack {
                     if let emotion = diary.emotion {
                         Text(emotion)
@@ -240,13 +410,13 @@ struct DiaryCardView: View {
                             .background(Color(hex: "C8F0D8"))
                             .cornerRadius(8)
                     }
-                    
+
                     Text(diary.createdAt.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 12))
                         .foregroundColor(Color(hex: "9C9B99"))
-                    
+
                     Spacer()
-                    
+
                     Text("\(diary.wordCount)字")
                         .font(.system(size: 12))
                         .foregroundColor(Color(hex: "9C9B99"))
@@ -256,8 +426,135 @@ struct DiaryCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.white)
             .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.clear, lineWidth: 0)
+            )
+            .overlay(
+                Group {
+                    if isToday {
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [Color(hex: "8B7EC8"), Color(hex: "6BB6D6")],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    }
+                }
+            )
             .shadow(color: Color.black.opacity(0.08), radius: 12, y: 2)
         }
+    }
+}
+
+// 左滑删除卡片
+struct SwipeableDiaryCard: View {
+    let diary: Diary
+    let onTap: (Diary) -> Void
+    let onDelete: () -> Void
+
+    @State private var offset: CGFloat = 0
+    @State private var showDeleteButton = false
+
+    private let deleteThreshold: CGFloat = -80
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            // 删除按钮背景
+            if showDeleteButton {
+                Button {
+                    onDelete()
+                    withAnimation {
+                        offset = 0
+                        showDeleteButton = false
+                    }
+                } label: {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.white)
+                                Text("删除")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white)
+                            }
+                            .frame(width: 80)
+                            .frame(maxHeight: .infinity)
+                            .background(Color(hex: "D08068"))
+                        }
+                        Spacer()
+                    }
+                }
+                .cornerRadius(16, corners: [.topRight, .bottomRight])
+            }
+
+            // 卡片内容
+            DiaryCardView(diary: diary, onTap: onTap)
+                .offset(x: offset)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            // 只允许左滑
+                            if value.translation.width < 0 {
+                                offset = value.translation.width
+                            }
+                        }
+                        .onEnded { value in
+                            let predictedOffset = value.translation.width + value.predictedEndTranslation.width * 0.3
+
+                            if predictedOffset < deleteThreshold {
+                                // 滑动足够，显示删除按钮
+                                withAnimation(.easeOut) {
+                                    offset = -80
+                                    showDeleteButton = true
+                                }
+                            } else {
+                                // 回弹
+                                withAnimation(.spring()) {
+                                    offset = 0
+                                    showDeleteButton = false
+                                }
+                            }
+                        }
+                )
+                .onTapGesture {
+                    // 点击卡片时隐藏删除按钮
+                    if showDeleteButton {
+                        withAnimation {
+                            offset = 0
+                            showDeleteButton = false
+                        }
+                    }
+                }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// 圆角扩展
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
     }
 }
 
