@@ -8,6 +8,8 @@ struct DictionaryView: View {
     @State private var editingEntry: DictionaryEntry?
     @State private var editWord = ""
     @State private var showEditSheet = false
+    @State private var deletingEntryId: Int?
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         ScrollView {
@@ -32,6 +34,22 @@ struct DictionaryView: View {
         .background(Color(hex: "F5F4F1"))
         .onAppear {
             loadEntries()
+        }
+        .alert("确定删除这个词汇吗？", isPresented: $showDeleteConfirm) {
+            Button("删除", role: .destructive) {
+                if let entryId = deletingEntryId {
+                    performDelete(id: entryId)
+                }
+            }
+            Button("取消", role: .cancel) {
+                deletingEntryId = nil
+            }
+        } message: {
+            if let entry = entries.first(where: { $0.id == deletingEntryId }) {
+                Text("「\(entry.word)」将被删除")
+            } else {
+                Text("此操作不可撤销")
+            }
         }
     }
 
@@ -113,21 +131,31 @@ struct DictionaryView: View {
 
                     Spacer()
 
+                    // 编辑按钮
                     Button {
                         startEdit(entry: entry)
                     } label: {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 14))
+                        Text("编辑")
+                            .font(.system(size: 13))
                             .foregroundColor(Color(hex: "8B7EC8"))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color(hex: "8B7EC8").opacity(0.1))
+                            .cornerRadius(8)
                     }
-                    .padding(.trailing, 8)
 
+                    // 删除按钮（加大间距）
                     Button {
-                        deleteEntry(id: entry.id)
+                        deletingEntryId = entry.id
+                        showDeleteConfirm = true
                     } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 14))
+                        Text("删除")
+                            .font(.system(size: 13))
                             .foregroundColor(Color(hex: "D08068"))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color(hex: "D08068").opacity(0.1))
+                            .cornerRadius(8)
                     }
                 }
                 .padding(16)
@@ -217,12 +245,13 @@ struct DictionaryView: View {
         }
     }
 
-    private func deleteEntry(id: Int) {
+    private func performDelete(id: Int) {
         Task {
             do {
                 try await APIService.shared.deleteDictionaryEntry(id: id)
                 await MainActor.run {
                     entries.removeAll { $0.id == id }
+                    deletingEntryId = nil
                 }
             } catch {
                 print("删除失败：\(error)")
