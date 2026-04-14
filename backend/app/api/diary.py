@@ -99,23 +99,63 @@ async def list_diaries(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     emotion: str = Query(None, description="按情绪筛选"),
+    topic: str = Query(None, description="按主题筛选"),
+    start_date: str = Query(None, description="开始日期 (YYYY-MM-DD)"),
+    end_date: str = Query(None, description="结束日期 (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db)
 ):
     """
     获取日记列表
-    支持分页和情绪筛选
+    支持分页、情绪筛选、主题筛选和时间筛选
     """
     try:
+        from datetime import datetime
+
         # 构建查询
         query = select(Diary)
 
         if emotion:
             query = query.where(Diary.emotion == emotion)
 
+        if topic:
+            # 主题存储在 JSON 数组中，使用 LIKE 查询
+            query = query.where(Diary.topics.like(f'%"{topic}"%'))
+
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                query = query.where(Diary.created_at >= start_dt)
+            except ValueError:
+                pass
+
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                # 包含结束日期的全天
+                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                query = query.where(Diary.created_at <= end_dt)
+            except ValueError:
+                pass
+
         # 计算总数
         count_query = select(func.count()).select_from(Diary)
         if emotion:
             count_query = count_query.where(Diary.emotion == emotion)
+        if topic:
+            count_query = count_query.where(Diary.topics.like(f'%"{topic}"%'))
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                count_query = count_query.where(Diary.created_at >= start_dt)
+            except ValueError:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                count_query = count_query.where(Diary.created_at <= end_dt)
+            except ValueError:
+                pass
 
         total_result = await db.execute(count_query)
         total = total_result.scalar()
@@ -269,3 +309,36 @@ def _diary_to_response(diary: Diary) -> DiaryResponse:
         created_at=diary.created_at,
         updated_at=diary.updated_at
     )
+
+
+@router.get("/filters")
+async def get_filters(db: AsyncSession = Depends(get_db)):
+    """
+    获取可用的筛选选项
+    返回所有情绪和主题列表
+    """
+    try:
+        # 获取所有情绪
+        emotion_query = select(Diary.emotion).where(Diary.emotion.isnot(None)).distinct()
+        emotion_result = await db.execute(emotion_query)
+        emotions = sorted([e for e in emotion_result.scalars().all() if e])
+
+        # 获取所有主题（从 JSON 数组中提取）
+        topic_query = select(Diary.topics).where(Diary.topics.isnot(None))
+        topic_result = await db.execute(topic_query)
+        topics_set = set()
+        for topics_json in topic_result.scalars().all():
+            try:
+                topics_list = json.loads(topics_json)
+                topics_set.update(topics_list)
+            except:
+                pass
+        topics = sorted(list(topics_set))
+
+        return {
+            "emotions": emotions,
+            "topics": topics
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取筛选选项失败: {str(e)}")
