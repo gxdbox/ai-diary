@@ -196,15 +196,7 @@ struct RecordView: View {
     }
 
     private var processingOverlay: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .tint(Color(hex: "8B7EC8"))
-            Text("AI 正在处理中...")
-                .font(.system(size: 16))
-                .foregroundColor(Color(hex: "8B7EC8"))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.white.opacity(0.9))
+        ProcessingOverlayView()
     }
 
     private func checkPermission() {
