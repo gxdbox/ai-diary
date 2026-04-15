@@ -77,6 +77,7 @@ struct TimelineView: View {
             .onReceive(NotificationCenter.default.publisher(for: .diaryDidCreate)) { _ in
                 loadData()
                 loadFilterOptions()
+                showRecordView = false  // 关闭录音页面，回到时间轴
             }
             .onReceive(NotificationCenter.default.publisher(for: .diaryDidUpdate)) { _ in
                 loadData()
