@@ -13,6 +13,7 @@ struct TimelineView: View {
     @State private var selectedTimeRange: TimeRange = .all
     @State private var deletingDiaryId: Int? = nil
     @State private var showDeleteConfirm = false
+    @State private var showRecordView = false
 
     enum TimeRange: String, CaseIterable {
         case today = "今天"
@@ -42,20 +43,25 @@ struct TimelineView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                statusBarPlaceholder
+            ZStack(alignment: .bottomTrailing) {
+                VStack(spacing: 0) {
+                    statusBarPlaceholder
 
-                header
+                    header
 
-                filterButtons
+                    filterButtons
 
-                if isLoading {
-                    loadingView
-                } else if diaries.isEmpty {
-                    emptyView
-                } else {
-                    diaryList
+                    if isLoading {
+                        loadingView
+                    } else if diaries.isEmpty {
+                        emptyView
+                    } else {
+                        diaryList
+                    }
                 }
+
+                // 悬浮添加按钮
+                addButton
             }
             .background(Color(hex: "F5F4F1"))
             .navigationDestination(item: $selectedDiary) { diary in
@@ -86,6 +92,9 @@ struct TimelineView: View {
                     }
                 )
             }
+            .sheet(isPresented: $showRecordView) {
+                RecordView()
+            }
             .alert("确定删除这篇日记吗？", isPresented: $showDeleteConfirm) {
                 Button("删除", role: .destructive) {
                     if let diaryId = deletingDiaryId {
@@ -103,6 +112,25 @@ struct TimelineView: View {
 
     private var statusBarPlaceholder: some View {
         Color.clear.frame(height: 62)
+    }
+
+    private var addButton: some View {
+        Button {
+            showRecordView = true
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color(hex: "8B7EC8"))
+                    .frame(width: 56, height: 56)
+                    .shadow(color: Color(hex: "8B7EC8").opacity(0.3), radius: 8, y: 4)
+
+                Image(systemName: "plus")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+        }
+        .padding(.trailing, 24)
+        .padding(.bottom, 100)
     }
 
     private var header: some View {
