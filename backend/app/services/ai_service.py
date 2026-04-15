@@ -233,106 +233,18 @@ class AIService:
         return events[:3]
 
     async def full_analysis(self, text: str) -> Dict:
-        """完整分析：清洗、情绪、主题、事件 - 合并为一次 API 调用"""
+        """完整分析：情绪、主题、事件"""
 
-        # 构建情绪词汇表提示
-        emotion_groups = {
-            "积极情绪": ["幸福", "快乐", "欣喜", "欢快", "高兴", "满足", "感恩", "自豪", "期待", "激动", "狂喜", "温情", "自信", "欣慰", "无忧无虑", "如释重负", "归家之喜", "温馨", "冷静"],
-            "消极情绪": ["愤怒", "焦虑", "悲伤", "恐惧", "绝望", "沮丧", "忧郁", "孤独", "内疚", "羞耻", "懊悔", "遗憾", "愤恨", "嫉妒", "不满", "气恼", "困惑", "震惊", "恐慌", "厌倦", "冷漠", "气馁", "失望", "厌恶", "惧怕", "尴尬", "仇恨", "不堪重负", "烦躁", "担忧"],
-            "复杂情绪": ["怀旧思乡", "惆怅", "物哀", "隐忍", "人去心空", "异境茫然", "失落", "矛盾", "乡愁", "悲天悯人"],
-            "社交情绪": ["共情", "同情", "幸灾乐祸", "替人脸红", "怕麻烦别人", "妒忌", "竞争", "义愤", "怜悯"],
+        # 顺序执行各项分析
+        emotion = await self.analyze_emotion(text)
+        topics = await self.extract_topics(text)
+        events = await self.extract_key_events(text)
+
+        return {
+            "emotion": emotion,
+            "topics": topics,
+            "key_events": events
         }
-
-        emotion_list_parts = []
-        for group, emotions in emotion_groups.items():
-            emotion_list_parts.append(f"\n【{group}】\n{', '.join(emotions)}")
-        emotion_list = "".join(emotion_list_parts)
-
-        # 先应用词典校正
-        corrected_text = apply_dictionary_correction(text)
-
-        prompt = f"""你是一个专业的日记分析助手。请完成以下任务：
-
-1. 【文本清洗】
-   - 删除口语填充词（嗯、啊、哈、那个、就是、然后呢、这个等）
-   - 纠正明显的错别字和语音识别错误
-   - 保持原意，不要改变内容
-   - 保持口语化风格，不要过度书面化
-   - 适当调整标点符号
-
-2. 【情绪分析】
-   从以下情绪词汇表中选择最匹配的情绪：
-{emotion_list}
-
-3. 【主题提取】
-   提取3-5个主题标签（如：工作、家庭、健康、社交、学习、娱乐等）
-
-4. 【关键事件】
-   提取1-3个关键事件
-
-【原文】
-{corrected_text}
-
-请返回以下 JSON 格式（仅返回 JSON，不要其他内容）：
-{{
-    "cleaned_text": "清洗后的文本",
-    "emotion": {{
-        "emotion": "主要情绪（从词汇表选择）",
-        "secondary_emotions": ["次要情绪1", "次要情绪2"],
-        "dimension": "情绪维度（positive/negative/mixed/social）",
-        "score": 情绪强度（1-10）,
-        "keywords": ["情绪关键词"],
-        "confidence": 信心度（0.0-1.0）
-    }},
-    "topics": ["主题1", "主题2", "主题3"],
-    "key_events": ["关键事件1", "关键事件2"]
-}}"""
-
-        result = await self.call_llm(prompt, max_tokens=3000)
-
-        try:
-            # 解析 JSON
-            json_str = result.strip()
-            if "```json" in json_str:
-                json_str = json_str.split("```json")[1].split("```")[0]
-            elif "```" in json_str:
-                json_str = json_str.split("```")[1].split("```")[0]
-
-            parsed = json.loads(json_str)
-
-            # 验证情绪词
-            primary = parsed.get("emotion", {}).get("emotion", "冷静")
-            primary = self._validate_emotion(primary)
-
-            return {
-                "cleaned_text": parsed.get("cleaned_text", corrected_text),
-                "emotion": {
-                    "emotion": primary,
-                    "secondary_emotions": parsed.get("emotion", {}).get("secondary_emotions", [])[:2],
-                    "dimension": parsed.get("emotion", {}).get("dimension", "mixed"),
-                    "score": float(parsed.get("emotion", {}).get("score", 5.0)),
-                    "keywords": parsed.get("emotion", {}).get("keywords", [])[:5],
-                    "confidence": float(parsed.get("emotion", {}).get("confidence", 0.8))
-                },
-                "topics": parsed.get("topics", [])[:5],
-                "key_events": parsed.get("key_events", [])[:3]
-            }
-
-        except json.JSONDecodeError:
-            logger.warning(f"JSON解析失败，使用默认值: {result}")
-            return {
-                "cleaned_text": corrected_text,
-                "emotion": {
-                    "emotion": "冷静",
-                    "secondary_emotions": [],
-                    "dimension": "mixed",
-                    "score": 5.0,
-                    "keywords": [],
-                    "confidence": 0.5
-                },
-                "topics": [],
-                "key_events": []
-            }
 
     async def answer_question(self, question: str, context: str) -> str:
         """基于上下文回答问题（RAG）"""
