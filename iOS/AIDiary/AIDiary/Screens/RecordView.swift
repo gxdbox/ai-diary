@@ -10,21 +10,24 @@ struct RecordView: View {
     @State private var showPermissionAlert = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            statusBarPlaceholder
+        ZStack {
+            VStack(spacing: 0) {
+                statusBarPlaceholder
 
-            navBar
+                navBar
 
-            recordSection
+                recordSection
 
-            if !speechService.transcribedText.isEmpty {
-                transcribeCard
+                if !speechService.transcribedText.isEmpty {
+                    transcribeCard
+                }
+
+                if speechService.isRecording {
+                    bottomControls
+                }
             }
 
-            if speechService.isRecording {
-                bottomControls
-            }
-
+            // AI 处理覆盖层
             if isProcessing {
                 processingOverlay
             }

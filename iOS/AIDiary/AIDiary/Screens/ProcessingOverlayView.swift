@@ -5,16 +5,30 @@ import Combine
 struct ProcessingOverlayView: View {
     @State private var currentQuote: Quote = QuoteLibrary.randomQuote()
     @State private var showQuote = false
-    @State private var animationPhase: Int = 0
-
-    let timer = Timer.publish(every: 6, on: .main, in: .common).autoconnect()
+    @State private var waveScale: CGFloat = 1.0
 
     var body: some View {
         VStack(spacing: 24) {
             // 顶部进度提示
             VStack(spacing: 8) {
-                // 动态波形动画
-                processingWave
+                // 简化的动态波形动画
+                HStack(spacing: 6) {
+                    ForEach(0..<5, id: \.self) { index in
+                        Circle()
+                            .fill(Color(hex: "8B7EC8"))
+                            .frame(width: 10, height: 10)
+                            .scaleEffect(waveScale)
+                            .animation(
+                                Animation.easeInOut(duration: 0.5)
+                                    .repeatForever()
+                                    .delay(Double(index) * 0.1),
+                                value: waveScale
+                            )
+                    }
+                }
+                .onAppear {
+                    waveScale = 1.3
+                }
 
                 Text("AI 正在分析中...")
                     .font(.system(size: 16))
@@ -40,48 +54,11 @@ struct ProcessingOverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(hex: "F5F4F1"))
         .onAppear {
-            // 延迟显示金句，先让用户看到进度
+            // 延迟显示金句
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 withAnimation(.easeIn(duration: 0.5)) {
                     showQuote = true
                 }
-            }
-        }
-        .onReceive(timer) { _ in
-            // 每6秒更换一条金句
-            withAnimation(.easeOut(duration: 0.3)) {
-                showQuote = false
-            }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                currentQuote = QuoteLibrary.randomQuote()
-                withAnimation(.easeIn(duration: 0.5)) {
-                    showQuote = true
-                }
-            }
-        }
-    }
-
-    // 处理动画波形
-    private var processingWave: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<5, id: \.self) { index in
-                Circle()
-                    .fill(Color(hex: "8B7EC8"))
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(animationPhase == index ? 1.3 : 0.7)
-                    .animation(
-                        Animation.easeInOut(duration: 0.4)
-                            .repeatForever()
-                            .delay(Double(index) * 0.15),
-                        value: animationPhase
-                    )
-            }
-        }
-        .onAppear {
-            animationPhase = 0
-            Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-                animationPhase = (animationPhase + 1) % 5
             }
         }
     }
