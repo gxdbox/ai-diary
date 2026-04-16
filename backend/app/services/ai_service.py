@@ -233,12 +233,14 @@ class AIService:
         return events[:3]
 
     async def full_analysis(self, text: str) -> Dict:
-        """完整分析：情绪、主题、事件"""
+        """完整分析：情绪、主题、事件 - 并行执行提高效率"""
 
-        # 顺序执行各项分析
-        emotion = await self.analyze_emotion(text)
-        topics = await self.extract_topics(text)
-        events = await self.extract_key_events(text)
+        # 并行执行三项分析（asyncio.gather 同时发起请求）
+        emotion, topics, events = await asyncio.gather(
+            self.analyze_emotion(text),
+            self.extract_topics(text),
+            self.extract_key_events(text)
+        )
 
         return {
             "emotion": emotion,
