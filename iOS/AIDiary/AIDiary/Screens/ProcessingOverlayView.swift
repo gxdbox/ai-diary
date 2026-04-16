@@ -8,39 +8,35 @@ struct ProcessingOverlayView: View {
     @State private var quoteTimer: Timer? = nil
 
     var body: some View {
-        VStack(spacing: 24) {
-            // 顶部进度提示
-            VStack(spacing: 8) {
-                // 动态波形动画
+        VStack(spacing: 0) {
+            Spacer()
+
+            // 金句卡片（主体）
+            if showQuote {
+                quoteCard
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+
+            Spacer()
+
+            // 底部 Loading 区域
+            VStack(spacing: 12) {
+                // 波形动画
                 HStack(spacing: 6) {
                     ForEach(0..<5, id: \.self) { index in
                         Circle()
                             .fill(Color(hex: "8B7EC8"))
-                            .frame(width: 10, height: 10)
+                            .frame(width: 8, height: 8)
                             .scaleEffect(animationPhase % 5 == index ? 1.4 : 0.8)
                             .animation(.easeInOut(duration: 0.3), value: animationPhase)
                     }
                 }
 
                 Text("AI 正在分析中...")
-                    .font(.system(size: 16))
+                    .font(.system(size: 14))
                     .foregroundColor(Color(hex: "8B7EC8"))
             }
-
-            Spacer()
-
-            // 金句展示区域
-            if showQuote {
-                quoteCard
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            }
-
-            Spacer()
-
-            // 底部提示
-            Text("每一次记录，都是与自己的对话")
-                .font(.system(size: 12))
-                .foregroundColor(Color(hex: "9C9B99"))
+            .padding(.bottom, 60)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(hex: "F5F4F1"))
@@ -81,24 +77,25 @@ struct ProcessingOverlayView: View {
 
     // 金句卡片
     private var quoteCard: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             Text(currentQuote.text)
-                .font(.system(size: 16))
+                .font(.system(size: 18, weight: .medium))
                 .foregroundColor(Color(hex: "1A1918"))
                 .multilineTextAlignment(.center)
-                .lineSpacing(6)
-                .padding(.horizontal, 24)
+                .lineSpacing(8)
+                .padding(.horizontal, 32)
 
             Text("— \(currentQuote.author)")
                 .font(.system(size: 14))
                 .foregroundColor(Color(hex: "9C9B99"))
         }
-        .padding(24)
+        .padding(32)
+        .frame(maxWidth: 320)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 20)
                 .fill(Color.white)
         )
-        .shadow(color: Color.black.opacity(0.06), radius: 12, y: 4)
+        .shadow(color: Color.black.opacity(0.08), radius: 16, y: 6)
     }
 }
 
