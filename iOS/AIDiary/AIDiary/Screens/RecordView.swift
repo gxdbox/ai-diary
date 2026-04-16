@@ -239,9 +239,12 @@ struct RecordView: View {
                     rawText: text,
                     recordingDuration: speechService.recordingDuration
                 )
-                // 保存到缓存
+                // 立即保存到缓存（自动保存，用户关闭也不会丢失）
                 await CacheService.shared.saveDiary(diary)
+
+                // 发送通知，让时间轴立即刷新显示新日记
                 await MainActor.run {
+                    NotificationCenter.default.post(name: .diaryDidCreate, object: nil)
                     currentDiary = diary
                     isProcessing = false
                     showPreview = true

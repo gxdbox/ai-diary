@@ -54,11 +54,11 @@ struct DiaryPreviewView: View {
             }
             
             Spacer()
-            
+
             Button {
-                saveDiary()
+                confirmSave()
             } label: {
-                Text("保存")
+                Text("确认")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(Color(hex: "8B7EC8"))
             }
@@ -288,13 +288,13 @@ struct DiaryPreviewView: View {
     private var saveButton: some View {
         VStack(spacing: 8) {
             Button {
-                saveDiary()
+                confirmSave()
             } label: {
                 if isSaving {
                     ProgressView()
                         .tint(.white)
                 } else {
-                    Text("保存日记")
+                    Text("确认保存")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -304,22 +304,27 @@ struct DiaryPreviewView: View {
                 }
             }
             .disabled(isSaving)
-            
-            Text("保存后可在时间轴查看")
+
+            Text("已自动保存，编辑后点确认更新")
                 .font(.system(size: 12))
                 .foregroundColor(Color(hex: "9C9B99"))
         }
         .padding(16)
         .padding(.bottom, 40)
     }
-    
-    private func saveDiary() {
+
+    private func confirmSave() {
+        // 如果没有编辑，直接关闭
+        if editedText.isEmpty || editedText == (diary.cleanedText ?? diary.rawText) {
+            dismiss()
+            return
+        }
+
+        // 有编辑，更新缓存
         isSaving = true
         Task {
-            // 获取最终文本（编辑后的或原始的）
-            let finalText = editedText.isEmpty ? (diary.cleanedText ?? diary.rawText) : editedText
-            
-            // 创建更新后的日记对象
+            let finalText = editedText
+
             let updatedDiary = Diary(
                 id: diary.id,
                 rawText: diary.rawText,
@@ -337,16 +342,13 @@ struct DiaryPreviewView: View {
                 createdAt: diary.createdAt,
                 updatedAt: Date()
             )
-            
-            // 保存到缓存（会覆盖同 ID 的旧数据）
+
             await CacheService.shared.saveDiary(updatedDiary)
-            
-            // 打印日志方便调试
-            print("保存编辑后的日记：ID=\(diary.id), 字数=\(finalText.count)")
-            print("编辑后内容：\(finalText.prefix(50))...")
-            
+
+            print("编辑后更新日记：ID=\(diary.id), 字数=\(finalText.count)")
+
             await MainActor.run {
-                NotificationCenter.default.post(name: .diaryDidCreate, object: nil)
+                NotificationCenter.default.post(name: .diaryDidUpdate, object: nil)
                 isSaving = false
                 dismiss()
             }
