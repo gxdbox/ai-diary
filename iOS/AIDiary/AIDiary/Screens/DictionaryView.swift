@@ -270,6 +270,14 @@ struct DictionaryView: View {
         let word = editWord.trimmingCharacters(in: .whitespaces)
         guard !word.isEmpty else { return }
 
+        // 如果没有修改，直接关闭
+        if word == entry.word {
+            showEditSheet = false
+            editingEntry = nil
+            return
+        }
+
+        // 有修改，调用 API 更新
         Task {
             do {
                 let updated = try await APIService.shared.updateDictionaryEntry(id: entry.id, word: word)
