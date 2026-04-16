@@ -201,13 +201,19 @@ struct DictionaryView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color(hex: "8B7EC8"))
+                        .background(editWord.trimmingCharacters(in: .whitespaces).isEmpty ? Color(hex: "C8C7C5") : Color(hex: "8B7EC8"))
                         .cornerRadius(12)
                 }
                 .disabled(editWord.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(24)
+        .onAppear {
+            // 确保 Sheet 显示时 editWord 正确初始化
+            if let entry = editingEntry, editWord.isEmpty {
+                editWord = entry.word
+            }
+        }
     }
 
     private func loadEntries() {
