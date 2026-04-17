@@ -12,6 +12,13 @@ struct DictionaryView: View {
     @State private var showDeleteConfirm = false
     @FocusState private var isEditFieldFocused: Bool
 
+    // 判断编辑内容是否有改动
+    private var hasEditChange: Bool {
+        guard let entry = editingEntry else { return false }
+        let trimmedEditWord = editWord.trimmingCharacters(in: .whitespaces)
+        return !trimmedEditWord.isEmpty && trimmedEditWord != entry.word
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -203,10 +210,9 @@ struct DictionaryView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(editWord.trimmingCharacters(in: .whitespaces).isEmpty ? Color(hex: "C8C7C5") : Color(hex: "8B7EC8"))
+                        .background(hasEditChange ? Color(hex: "8B7EC8") : Color(hex: "C8C7C5"))
                         .cornerRadius(12)
                 }
-                .disabled(editWord.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(24)
@@ -276,12 +282,10 @@ struct DictionaryView: View {
     }
 
     private func saveEdit() {
-        guard let entry = editingEntry else { return }
+        // 无论是否有改动，点击保存都关闭 sheet
         let word = editWord.trimmingCharacters(in: .whitespaces)
-        guard !word.isEmpty else { return }
-
-        // 如果没有修改，直接关闭
-        if word == entry.word {
+        guard let entry = editingEntry, !word.isEmpty, word != entry.word else {
+            // 无改动或空内容，直接关闭
             showEditSheet = false
             editingEntry = nil
             return
