@@ -52,16 +52,8 @@ struct DiaryPreviewView: View {
                     .font(.system(size: 15))
                     .foregroundColor(Color(hex: "8B7EC8"))
             }
-            
-            Spacer()
 
-            Button {
-                confirmSave()
-            } label: {
-                Text("确认")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(Color(hex: "8B7EC8"))
-            }
+            Spacer()
         }
         .padding(.horizontal, 24)
         .frame(height: 44)
