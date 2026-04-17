@@ -3,6 +3,7 @@ import AVFoundation
 
 struct RecordView: View {
     @StateObject private var speechService = SpeechService.shared
+    @Environment(\.dismiss) private var dismiss
 
     @State private var isProcessing = false
     @State private var showPreview = false
@@ -36,6 +37,11 @@ struct RecordView: View {
             if let diary = currentDiary {
                 DiaryPreviewView(diary: diary)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .diaryConfirmSave)) { _ in
+            // 用户确认保存，关闭录音页面回到时间轴
+            speechService.reset()
+            dismiss()
         }
         .alert("需要麦克风权限", isPresented: $showPermissionAlert) {
             Button("取消", role: .cancel) {}

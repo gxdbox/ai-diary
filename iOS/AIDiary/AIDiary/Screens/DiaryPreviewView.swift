@@ -314,43 +314,39 @@ struct DiaryPreviewView: View {
     }
 
     private func confirmSave() {
-        // 如果没有编辑，直接关闭
-        if editedText.isEmpty || editedText == (diary.cleanedText ?? diary.rawText) {
-            dismiss()
-            return
-        }
+        // 立即发送通知关闭录音页面，回到时间轴
+        NotificationCenter.default.post(name: .diaryConfirmSave, object: nil)
+        dismiss()
 
-        // 有编辑，更新缓存
-        isSaving = true
+        // 后台异步更新缓存（不阻塞用户）
         Task {
-            let finalText = editedText
+            let finalText = editedText.isEmpty ? (diary.cleanedText ?? diary.rawText) : editedText
 
-            let updatedDiary = Diary(
-                id: diary.id,
-                rawText: diary.rawText,
-                cleanedText: finalText,
-                emotion: diary.emotion,
-                emotionScore: diary.emotionScore,
-                emotionKeywords: diary.emotionKeywords,
-                secondaryEmotions: diary.secondaryEmotions,
-                emotionDimension: diary.emotionDimension,
-                emotionConfidence: diary.emotionConfidence,
-                topics: diary.topics,
-                keyEvents: diary.keyEvents,
-                recordingDuration: diary.recordingDuration,
-                wordCount: finalText.count,
-                createdAt: diary.createdAt,
-                updatedAt: Date()
-            )
+            // 只有编辑了才更新
+            if finalText != (diary.cleanedText ?? diary.rawText) {
+                let updatedDiary = Diary(
+                    id: diary.id,
+                    rawText: diary.rawText,
+                    cleanedText: finalText,
+                    emotion: diary.emotion,
+                    emotionScore: diary.emotionScore,
+                    emotionKeywords: diary.emotionKeywords,
+                    secondaryEmotions: diary.secondaryEmotions,
+                    emotionDimension: diary.emotionDimension,
+                    emotionConfidence: diary.emotionConfidence,
+                    topics: diary.topics,
+                    keyEvents: diary.keyEvents,
+                    recordingDuration: diary.recordingDuration,
+                    wordCount: finalText.count,
+                    createdAt: diary.createdAt,
+                    updatedAt: Date()
+                )
 
-            await CacheService.shared.saveDiary(updatedDiary)
+                await CacheService.shared.saveDiary(updatedDiary)
 
-            print("编辑后更新日记：ID=\(diary.id), 字数=\(finalText.count)")
-
-            await MainActor.run {
-                NotificationCenter.default.post(name: .diaryDidUpdate, object: nil)
-                isSaving = false
-                dismiss()
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .diaryDidUpdate, object: nil)
+                }
             }
         }
     }
