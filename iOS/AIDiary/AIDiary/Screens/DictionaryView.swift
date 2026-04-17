@@ -10,6 +10,7 @@ struct DictionaryView: View {
     @State private var showEditSheet = false
     @State private var deletingEntryId: Int?
     @State private var showDeleteConfirm = false
+    @FocusState private var isEditFieldFocused: Bool
 
     var body: some View {
         ScrollView {
@@ -179,6 +180,7 @@ struct DictionaryView: View {
                 .padding(12)
                 .background(Color(hex: "F5F4F1"))
                 .cornerRadius(12)
+                .focused($isEditFieldFocused)
 
             HStack(spacing: 16) {
                 Button {
@@ -213,6 +215,8 @@ struct DictionaryView: View {
             if let entry = editingEntry, editWord.isEmpty {
                 editWord = entry.word
             }
+            // 自动聚焦 TextField，用户可直接输入
+            isEditFieldFocused = true
         }
     }
 
