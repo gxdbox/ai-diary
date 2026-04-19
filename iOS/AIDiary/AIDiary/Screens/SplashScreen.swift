@@ -136,10 +136,11 @@ struct PolygonShape: Shape {
         let radius = min(rect.width, rect.height) / 2
 
         for i in 0..<sides {
-            let angle = Angle.degrees(Double(i) * 360.0 / Double(sides) - 90)
+            let angle = Double(i) * 360.0 / Double(sides) - 90
+            let radians = angle * .pi / 180.0
             let point = CGPoint(
-                x: center.x + radius * cos(angle.radians),
-                y: center.y + radius * sin(angle.radians)
+                x: center.x + radius * CGFloat(__cos(radians)),
+                y: center.y + radius * CGFloat(__sin(radians))
             )
             if i == 0 {
                 path.move(to: point)
