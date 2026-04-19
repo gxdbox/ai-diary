@@ -25,26 +25,29 @@ class APIService {
     
     func fetchDiaries(page: Int = 1, pageSize: Int = 20, emotion: String? = nil, topic: String? = nil, startDate: String? = nil, endDate: String? = nil) async throws -> DiaryListResponse {
         var urlComponents = URLComponents(string: "\(baseURL)/api/diary/list")!
-        var queryItems: [URLQueryItem] = [
+        urlComponents.queryItems = [
             URLQueryItem(name: "page", value: "\(page)"),
             URLQueryItem(name: "page_size", value: "\(pageSize)")
         ]
 
         if let emotion = emotion {
-            queryItems.append(URLQueryItem(name: "emotion", value: emotion))
+            urlComponents.queryItems?.append(URLQueryItem(name: "emotion", value: emotion))
         }
         if let topic = topic {
-            queryItems.append(URLQueryItem(name: "topic", value: topic))
+            urlComponents.queryItems?.append(URLQueryItem(name: "topic", value: topic))
         }
         if let startDate = startDate {
-            queryItems.append(URLQueryItem(name: "start_date", value: startDate))
+            urlComponents.queryItems?.append(URLQueryItem(name: "start_date", value: startDate))
         }
         if let endDate = endDate {
-            queryItems.append(URLQueryItem(name: "end_date", value: endDate))
+            urlComponents.queryItems?.append(URLQueryItem(name: "end_date", value: endDate))
         }
 
-        urlComponents.queryItems = queryItems
-        let url = urlComponents.url!
+        guard let url = urlComponents.url else {
+            throw URLError(.badURL)
+        }
+
+        print("Fetching diaries from: \(url.absoluteString)")
 
         let (data, _) = try await URLSession.shared.data(from: url)
         return try decode(data)

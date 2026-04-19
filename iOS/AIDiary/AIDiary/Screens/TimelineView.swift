@@ -274,27 +274,32 @@ struct TimelineView: View {
                 )
                 let statsData = try await APIService.shared.fetchStats()
 
-                // 获取缓存数据合并
-                let cachedDiaries = await CacheService.shared.getAllDiaries()
                 var mergedDiaries: [Diary] = []
-                var cachedDict = Dictionary(grouping: cachedDiaries, by: { $0.id })
 
-                for networkDiary in response.items {
-                    if let cached = cachedDict[networkDiary.id]?.first {
-                        mergedDiaries.append(cached)
-                        cachedDict[networkDiary.id] = nil
-                    } else {
+                if selectedEmotion != nil || selectedTopic != nil || selectedTimeRange != .all {
+                    // 有筛选 → 只用网络数据（保证筛选条件匹配）
+                    mergedDiaries = response.items
+                } else {
+                    // 无筛选 → 网络数据优先，保留缓存独有的（离线创建）
+                    let cachedDiaries = await CacheService.shared.getAllDiaries()
+                    var cachedDict = Dictionary(grouping: cachedDiaries, by: { $0.id })
+
+                    // 网络有的 → 用网络版本（最新数据）
+                    for networkDiary in response.items {
                         mergedDiaries.append(networkDiary)
+                        cachedDict[networkDiary.id] = nil  // 标记已处理
                     }
-                }
 
-                for (_, cachedList) in cachedDict {
-                    mergedDiaries.append(contentsOf: cachedList)
+                    // 网络没有但缓存有 → 保留（离线创建或未同步）
+                    for (_, cachedList) in cachedDict {
+                        mergedDiaries.append(contentsOf: cachedList)
+                    }
+
+                    // 更新缓存（网络成功后，保持缓存最新）
+                    await CacheService.shared.saveDiaries(mergedDiaries)
                 }
 
                 mergedDiaries.sort { $0.createdAt > $1.createdAt }
-
-                await CacheService.shared.saveDiaries(mergedDiaries)
 
                 await MainActor.run {
                     diaries = mergedDiaries
@@ -302,6 +307,7 @@ struct TimelineView: View {
                     isLoading = false
                 }
             } catch {
+                // 网络失败 → 用缓存兜底
                 let cachedDiaries = await CacheService.shared.getAllDiaries()
                 let cachedStats = await CacheService.shared.getStats()
 
@@ -340,26 +346,29 @@ struct TimelineView: View {
             )
             let statsData = try await APIService.shared.fetchStats()
 
-            let cachedDiaries = await CacheService.shared.getAllDiaries()
             var mergedDiaries: [Diary] = []
-            var cachedDict = Dictionary(grouping: cachedDiaries, by: { $0.id })
 
-            for networkDiary in response.items {
-                if let cached = cachedDict[networkDiary.id]?.first {
-                    mergedDiaries.append(cached)
-                    cachedDict[networkDiary.id] = nil
-                } else {
+            if selectedEmotion != nil || selectedTopic != nil || selectedTimeRange != .all {
+                // 有筛选 → 只用网络数据（保证筛选条件匹配）
+                mergedDiaries = response.items
+            } else {
+                // 无筛选 → 网络数据优先，保留缓存独有的
+                let cachedDiaries = await CacheService.shared.getAllDiaries()
+                var cachedDict = Dictionary(grouping: cachedDiaries, by: { $0.id })
+
+                for networkDiary in response.items {
                     mergedDiaries.append(networkDiary)
+                    cachedDict[networkDiary.id] = nil
                 }
-            }
 
-            for (_, cachedList) in cachedDict {
-                mergedDiaries.append(contentsOf: cachedList)
+                for (_, cachedList) in cachedDict {
+                    mergedDiaries.append(contentsOf: cachedList)
+                }
+
+                await CacheService.shared.saveDiaries(mergedDiaries)
             }
 
             mergedDiaries.sort { $0.createdAt > $1.createdAt }
-
-            await CacheService.shared.saveDiaries(mergedDiaries)
 
             await MainActor.run {
                 diaries = mergedDiaries
