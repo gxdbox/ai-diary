@@ -105,7 +105,7 @@ struct DictionaryView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
-                    .background(Color(hex: "8B7EC8"))
+                    .background(Color(hex: "C4935A"))
                     .cornerRadius(12)
             }
             .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -116,7 +116,7 @@ struct DictionaryView: View {
         VStack {
             Spacer()
             ProgressView()
-                .tint(Color(hex: "8B7EC8"))
+                .tint(Color(hex: "C4935A"))
             Spacer()
         }
     }
@@ -152,10 +152,10 @@ struct DictionaryView: View {
                     } label: {
                         Text("编辑")
                             .font(.system(size: 13))
-                            .foregroundColor(Color(hex: "8B7EC8"))
+                            .foregroundColor(Color(hex: "C4935A"))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .background(Color(hex: "8B7EC8").opacity(0.1))
+                            .background(Color(hex: "C4935A").opacity(0.1))
                             .cornerRadius(8)
                     }
 
@@ -223,7 +223,7 @@ struct DictionaryView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(hasEditChange ? Color(hex: "8B7EC8") : Color(hex: "C8C7C5"))
+                        .background(hasEditChange ? Color(hex: "C4935A") : Color(hex: "C8C7C5"))
                         .cornerRadius(12)
                 }
             }

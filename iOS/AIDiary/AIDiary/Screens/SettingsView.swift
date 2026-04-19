@@ -49,7 +49,7 @@ struct SettingsView: View {
         HStack(spacing: 16) {
             // 头像
             Circle()
-                .fill(Color(hex: "8B7EC8"))
+                .fill(Color(hex: "C4935A"))
                 .frame(width: 56, height: 56)
                 .overlay(
                     Text("我")
@@ -59,11 +59,11 @@ struct SettingsView: View {
 
             // 用户信息
             VStack(alignment: .leading, spacing: 4) {
-                Text("日记用户")
+                Text("松果收藏家")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(Color(hex: "1A1918"))
 
-                Text("已记录 365 天")
+                Text("珍藏每一颗记忆")
                     .font(.system(size: 13))
                     .foregroundColor(Color(hex: "6D6C6A"))
             }
@@ -144,7 +144,7 @@ struct SettingsView: View {
                     .foregroundColor(Color(hex: "1A1918"))
                 Spacer()
                 Circle()
-                    .fill(Color(hex: "8B7EC8"))
+                    .fill(Color(hex: "C4935A"))
                     .frame(width: 20, height: 20)
             }
             .padding(.vertical, 14)
@@ -224,7 +224,7 @@ struct SettingsView: View {
             Spacer()
             Toggle("", isOn: isOn)
                 .labelsHidden()
-                .tint(Color(hex: "8B7EC8"))
+                .tint(Color(hex: "C4935A"))
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 16)

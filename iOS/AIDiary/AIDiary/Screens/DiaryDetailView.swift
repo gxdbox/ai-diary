@@ -49,7 +49,7 @@ struct DiaryDetailView: View {
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 18))
-                            .foregroundColor(Color(hex: "8B7EC8"))
+                            .foregroundColor(Color(hex: "C4935A"))
                     }
 
                     Button {
@@ -213,7 +213,7 @@ struct DiaryDetailView: View {
                             } label: {
                                 Text(showOriginalText ? "查看优化" : "查看原文")
                                     .font(.system(size: 12))
-                                    .foregroundColor(Color(hex: "8B7EC8"))
+                                    .foregroundColor(Color(hex: "C4935A"))
                             }
                         }
 
@@ -225,7 +225,7 @@ struct DiaryDetailView: View {
                         } label: {
                             Text("编辑")
                                 .font(.system(size: 12))
-                                .foregroundColor(Color(hex: "8B7EC8"))
+                                .foregroundColor(Color(hex: "C4935A"))
                         }
                     }
                 }
@@ -275,7 +275,7 @@ struct DiaryDetailView: View {
                     .disabled(isSavingEdit)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(isSavingEdit ? Color.gray : Color(hex: "8B7EC8"))
+                    .background(isSavingEdit ? Color.gray : Color(hex: "C4935A"))
                     .cornerRadius(8)
                 }
             } else {
@@ -393,7 +393,7 @@ struct DiaryDetailView: View {
         case "negative":
             return Color(hex: "D89575")
         case "mixed":
-            return Color(hex: "8B7EC8")
+            return Color(hex: "C4935A")
         case "social":
             return Color(hex: "5B9BD5")
         default:

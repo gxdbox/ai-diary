@@ -83,15 +83,15 @@ struct AnalyticsView: View {
         VStack {
             Spacer()
             ProgressView()
-                .tint(Color(hex: "8B7EC8"))
+                .tint(Color(hex: "C4935A"))
             Spacer()
         }
     }
     
     private var statsRow: some View {
         HStack(spacing: 10) {
-            StatCard(icon: "📖", value: "\(stats?.totalDiaries ?? 0)", label: "总日记")
-            StatCard(icon: "🔥", value: "\(stats?.streakDays ?? 0)", label: "连续天数")
+            StatCard(icon: "🌰", value: "\(stats?.totalDiaries ?? 0)", label: "松果数")
+            StatCard(icon: "🐿️", value: "\(stats?.streakDays ?? 0)", label: "连续收藏")
             StatCard(icon: "📝", value: "\(stats?.totalWords ?? 0)", label: "总字数")
             StatCard(icon: "😊", value: stats?.averageEmotionScore.map { String(format: "%.1f", $0) } ?? "-", label: "平均情绪")
         }
@@ -164,11 +164,11 @@ struct TimeRangeButton: View {
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(isSelected ? Color(hex: "8B7EC8") : Color.white)
+                        .fill(isSelected ? Color(hex: "C4935A") : Color.white)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(isSelected ? Color(hex: "8B7EC8") : Color(hex: "E5E4E1"), lineWidth: 1)
+                        .stroke(isSelected ? Color(hex: "C4935A") : Color(hex: "E5E4E1"), lineWidth: 1)
                 )
         }
     }

@@ -45,7 +45,7 @@ struct FilterSheet: View {
                         onApply()
                         dismiss()
                     }
-                    .foregroundColor(Color(hex: "8B7EC8"))
+                    .foregroundColor(Color(hex: "C4935A"))
                     .fontWeight(.semibold)
                 }
             }
@@ -145,11 +145,11 @@ struct FilterOptionButton: View {
                 .frame(minWidth: 80)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(isSelected ? Color(hex: "8B7EC8") : Color.white)
+                        .fill(isSelected ? Color(hex: "C4935A") : Color.white)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(isSelected ? Color(hex: "8B7EC8") : Color(hex: "E5E4E1"), lineWidth: 1)
+                        .stroke(isSelected ? Color(hex: "C4935A") : Color(hex: "E5E4E1"), lineWidth: 1)
                 )
         }
     }

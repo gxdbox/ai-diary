@@ -69,7 +69,7 @@ struct SearchView: View {
         VStack(spacing: 12) {
             Spacer()
             ProgressView()
-                .tint(Color(hex: "8B7EC8"))
+                .tint(Color(hex: "C4935A"))
             Text("AI 思考中...")
                 .foregroundColor(Color(hex: "9C9B99"))
             Spacer()
@@ -106,10 +106,10 @@ struct SearchView: View {
                 } label: {
                     Text("再问一次")
                         .font(.system(size: 14))
-                        .foregroundColor(Color(hex: "8B7EC8"))
+                        .foregroundColor(Color(hex: "C4935A"))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color(hex: "8B7EC8").opacity(0.1))
+                        .background(Color(hex: "C4935A").opacity(0.1))
                         .cornerRadius(12)
                 }
             }

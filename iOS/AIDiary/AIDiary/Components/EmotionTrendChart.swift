@@ -41,7 +41,7 @@ struct EmotionTrendChart: View {
                 x: .value("日期", item.date, unit: .day),
                 y: .value("情绪分数", item.score)
             )
-            .foregroundStyle(Color(hex: "8B7EC8"))
+            .foregroundStyle(Color(hex: "C4935A"))
             .interpolationMethod(.catmullRom)
             
             AreaMark(
@@ -50,7 +50,7 @@ struct EmotionTrendChart: View {
             )
             .foregroundStyle(
                 .linearGradient(
-                    colors: [Color(hex: "8B7EC8").opacity(0.3), Color(hex: "8B7EC8").opacity(0.05)],
+                    colors: [Color(hex: "C4935A").opacity(0.3), Color(hex: "C4935A").opacity(0.05)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -61,11 +61,11 @@ struct EmotionTrendChart: View {
                 x: .value("日期", item.date, unit: .day),
                 y: .value("情绪分数", item.score)
             )
-            .foregroundStyle(Color(hex: "8B7EC8"))
+            .foregroundStyle(Color(hex: "C4935A"))
             .annotation(position: .top, alignment: .center) {
                 Text(String(format: "%.1f", item.score))
                     .font(.system(size: 10))
-                    .foregroundColor(Color(hex: "8B7EC8"))
+                    .foregroundColor(Color(hex: "C4935A"))
             }
         }
         .frame(height: 200)

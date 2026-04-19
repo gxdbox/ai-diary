@@ -92,7 +92,7 @@ struct RecordView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .fill(speechService.isPaused ? Color(hex: "D89575") : Color(hex: "8B7EC8"))
+                        .fill(speechService.isPaused ? Color(hex: "D89575") : Color(hex: "C4935A"))
                         .frame(width: 80, height: 80)
 
                     if speechService.isRecording && !speechService.isPaused {
@@ -115,11 +115,11 @@ struct RecordView: View {
             } else if speechService.isRecording {
                 Text("正在录音...")
                     .font(.system(size: 14))
-                    .foregroundColor(Color(hex: "8B7EC8"))
+                    .foregroundColor(Color(hex: "C4935A"))
 
                 Text("已录音 \(speechService.recordingDuration / 60):\(String(format: "%02d", speechService.recordingDuration % 60))")
                     .font(.system(size: 14, design: .monospaced))
-                    .foregroundColor(Color(hex: "8B7EC8"))
+                    .foregroundColor(Color(hex: "C4935A"))
             } else {
                 Text("点击开始录音")
                     .font(.system(size: 14))
@@ -195,9 +195,9 @@ struct RecordView: View {
                         .foregroundColor(.white)
                 }
                 .frame(width: 60, height: 60)
-                .background(Color(hex: "8B7EC8"))
+                .background(Color(hex: "C4935A"))
                 .cornerRadius(12)
-                .shadow(color: Color(hex: "8B7EC8").opacity(0.3), radius: 8, y: 2)
+                .shadow(color: Color(hex: "C4935A").opacity(0.3), radius: 8, y: 2)
             }
         }
         .padding(.horizontal, 60)
@@ -298,7 +298,7 @@ struct AnimatedWaveBar: View {
         let height = animatedHeight
 
         Rectangle()
-            .fill(Color(hex: "8B7EC8").opacity(0.6))
+            .fill(Color(hex: "C4935A").opacity(0.6))
             .frame(width: 4, height: height)
             .cornerRadius(2)
             .offset(

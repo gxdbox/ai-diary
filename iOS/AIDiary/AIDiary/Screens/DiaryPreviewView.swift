@@ -50,7 +50,7 @@ struct DiaryPreviewView: View {
             } label: {
                 Text("< 重新录制")
                     .font(.system(size: 15))
-                    .foregroundColor(Color(hex: "8B7EC8"))
+                    .foregroundColor(Color(hex: "C4935A"))
             }
 
             Spacer()
@@ -71,7 +71,7 @@ struct DiaryPreviewView: View {
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(activeTab == .ai ? Color(hex: "8B7EC8") : Color.clear)
+                            .fill(activeTab == .ai ? Color(hex: "C4935A") : Color.clear)
                     )
             }
             
@@ -85,7 +85,7 @@ struct DiaryPreviewView: View {
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(activeTab == .raw ? Color(hex: "8B7EC8") : Color.clear)
+                            .fill(activeTab == .raw ? Color(hex: "C4935A") : Color.clear)
                     )
             }
         }
@@ -115,7 +115,7 @@ struct DiaryPreviewView: View {
                     } label: {
                         Text("编辑")
                             .font(.system(size: 12))
-                            .foregroundColor(Color(hex: "8B7EC8"))
+                            .foregroundColor(Color(hex: "C4935A"))
                     }
                 }
             }
@@ -159,7 +159,7 @@ struct DiaryPreviewView: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
-                            .background(Color(hex: "8B7EC8"))
+                            .background(Color(hex: "C4935A"))
                             .cornerRadius(8)
                     }
                 }
@@ -291,7 +291,7 @@ struct DiaryPreviewView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
-                        .background(Color(hex: "8B7EC8"))
+                        .background(Color(hex: "C4935A"))
                         .cornerRadius(12)
                 }
             }

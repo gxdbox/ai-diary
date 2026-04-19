@@ -25,7 +25,7 @@ struct ProcessingOverlayView: View {
                 HStack(spacing: 6) {
                     ForEach(0..<5, id: \.self) { index in
                         Circle()
-                            .fill(Color(hex: "8B7EC8"))
+                            .fill(Color(hex: "C4935A"))
                             .frame(width: 8, height: 8)
                             .scaleEffect(animationPhase % 5 == index ? 1.4 : 0.8)
                             .animation(.easeInOut(duration: 0.3), value: animationPhase)
@@ -34,7 +34,7 @@ struct ProcessingOverlayView: View {
 
                 Text("AI 正在分析中...")
                     .font(.system(size: 14))
-                    .foregroundColor(Color(hex: "8B7EC8"))
+                    .foregroundColor(Color(hex: "C4935A"))
             }
             .padding(.bottom, 60)
         }

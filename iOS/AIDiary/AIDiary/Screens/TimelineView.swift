@@ -121,9 +121,9 @@ struct TimelineView: View {
         } label: {
             ZStack {
                 Circle()
-                    .fill(Color(hex: "8B7EC8"))
+                    .fill(Color(hex: "C4935A"))
                     .frame(width: 56, height: 56)
-                    .shadow(color: Color(hex: "8B7EC8").opacity(0.3), radius: 8, y: 4)
+                    .shadow(color: Color(hex: "C4935A").opacity(0.3), radius: 8, y: 4)
 
                 Image(systemName: "plus")
                     .font(.system(size: 24, weight: .semibold))
@@ -136,7 +136,7 @@ struct TimelineView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("我的日记")
+            Text("松果日记")
                 .font(.system(size: 26, weight: .semibold))
                 .foregroundColor(Color(hex: "1A1918"))
 
@@ -146,7 +146,7 @@ struct TimelineView: View {
                     .foregroundColor(Color(hex: "6D6C6A"))
 
                 if let streak = stats?.streakDays, streak > 0 {
-                    Text("🔥 连续 \(streak) 天")
+                    Text("🐿️ 连续 \(streak) 天")
                         .font(.system(size: 14))
                         .foregroundColor(Color(hex: "D89575"))
                 }
@@ -189,7 +189,7 @@ struct TimelineView: View {
                 } label: {
                     Text("清除")
                         .font(.system(size: 12))
-                        .foregroundColor(Color(hex: "8B7EC8"))
+                        .foregroundColor(Color(hex: "C4935A"))
                 }
             }
         }
@@ -201,7 +201,7 @@ struct TimelineView: View {
         VStack {
             Spacer()
             ProgressView()
-                .tint(Color(hex: "8B7EC8"))
+                .tint(Color(hex: "C4935A"))
             Spacer()
         }
     }
@@ -211,10 +211,10 @@ struct TimelineView: View {
             Spacer()
             Text("📝")
                 .font(.system(size: 48))
-            Text("还没有日记")
+            Text("还没有收藏松果")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(Color(hex: "1A1918"))
-            Text("点击下方录音按钮开始记录")
+            Text("点击下方按钮开始珍藏记忆")
                 .font(.system(size: 14))
                 .foregroundColor(Color(hex: "9C9B99"))
             Spacer()
@@ -409,11 +409,11 @@ struct FilterChip: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(isSelected ? Color(hex: "8B7EC8") : Color.white)
+                    .fill(isSelected ? Color(hex: "C4935A") : Color.white)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color(hex: "8B7EC8") : Color(hex: "E5E4E1"), lineWidth: 1)
+                    .stroke(isSelected ? Color(hex: "C4935A") : Color(hex: "E5E4E1"), lineWidth: 1)
             )
         }
     }
@@ -471,7 +471,7 @@ struct DiaryCardView: View {
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(
                             LinearGradient(
-                                colors: [Color(hex: "8B7EC8"), Color(hex: "6BB6D6")],
+                                colors: [Color(hex: "C4935A"), Color(hex: "6BB6D6")],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),

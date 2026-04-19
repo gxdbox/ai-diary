@@ -95,7 +95,7 @@ struct TabBarItem: View {
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 26)
-                    .fill(isSelected ? Color(hex: "8B7EC8") : Color.clear)
+                    .fill(isSelected ? Color(hex: "C4935A") : Color.clear)
             )
         }
     }
