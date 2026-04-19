@@ -211,13 +211,62 @@ try {
 - **模型层** (`app/models/`): SQLAlchemy 模型
 - **数据库** (`app/db/`): 数据库连接和初始化
 
-### Mobile
+### iOS (SwiftUI)
 
-- **Screens** (`src/screens/`): 页面级组件
-- **Components** (`src/components/`): 可复用组件
-- **Services** (`src/services/`): API/存储调用
-- **Store** (`src/store/`): Zustand 状态管理
-- **Types** (`src/types/`): TypeScript 类型定义
+- **Screens** (`AIDiary/Screens/`): 页面级视图
+- **Components** (`AIDiary/Components/`): 可复用组件
+- **Services** (`AIDiary/Services/`): API 调用、缓存管理
+- **Models** (`AIDiary/Models/`): 数据模型定义
+
+---
+
+## Cache Strategy (iOS)
+
+### 核心原则
+
+**网络数据优先，缓存作为备份**
+
+缓存用于：
+1. 离线访问历史日记
+2. 网络失败时兜底
+3. 保留离线创建的日记
+
+### 同步策略
+
+| 场景 | 行为 | 说明 |
+|------|------|------|
+| **无筛选加载** | 网络数据 + 缓存独有的 | 最新数据 + 离线创建 |
+| **有筛选加载** | 只用网络数据 | 保证筛选条件匹配 |
+| **网络成功** | 更新缓存 | 缓存保持最新 |
+| **网络失败** | 用缓存兜底 | 离线可访问 |
+| **创建日记** | 先存缓存，后同步网络 | 保留离线创建 |
+| **编辑日记** | 更新缓存 + 后台同步 | 不阻塞用户 |
+
+### 代码示例
+
+```swift
+// 无筛选：网络优先 + 缓存独有的
+for networkDiary in response.items {
+    mergedDiaries.append(networkDiary)  // 网络版本优先
+    cachedDict[networkDiary.id] = nil
+}
+for (_, cachedList) in cachedDict {
+    mergedDiaries.append(contentsOf: cachedList)  // 保留离线创建
+}
+
+// 有筛选：只用网络数据
+mergedDiaries = response.items
+```
+
+### 开发注意事项
+
+**任何涉及数据增删改查的功能，都必须考虑缓存同步：**
+
+1. 新增数据 → 先存缓存，后台同步网络
+2. 更新数据 → 更新缓存 + 后台同步
+3. 删除数据 → 删除缓存 + 后台同步
+4. 查询数据 → 区分筛选/无筛选场景
+5. 网络失败 → 用缓存兜底
 
 ---
 

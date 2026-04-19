@@ -12,6 +12,13 @@ struct FilterSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    // 拖拽指示条
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(Color(hex: "C8C7C5"))
+                        .frame(width: 36, height: 5)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 8)
+
                     // 情绪筛选
                     emotionSection
 
@@ -21,7 +28,7 @@ struct FilterSheet: View {
                     // 时间筛选
                     timeRangeSection
                 }
-                .padding(16)
+                .padding(.horizontal, 16)
             }
             .background(Color(hex: "F5F4F1"))
             .navigationTitle("筛选")

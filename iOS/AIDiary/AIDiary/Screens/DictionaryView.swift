@@ -24,6 +24,13 @@ struct DictionaryView: View {
             VStack(spacing: 24) {
                 statusBarPlaceholder
 
+                // 拖拽指示条（提示用户可以下滑关闭）
+                RoundedRectangle(cornerRadius: 2.5)
+                    .fill(Color(hex: "C8C7C5"))
+                    .frame(width: 36, height: 5)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, -16)
+
                 titleSection
 
                 addWordSection
@@ -179,6 +186,12 @@ struct DictionaryView: View {
 
     private var editSheet: some View {
         VStack(spacing: 24) {
+            // 拖拽指示条
+            RoundedRectangle(cornerRadius: 2.5)
+                .fill(Color(hex: "C8C7C5"))
+                .frame(width: 36, height: 5)
+                .padding(.top, 8)
+
             Text("编辑词汇")
                 .font(.system(size: 20, weight: .semibold))
 
@@ -215,7 +228,10 @@ struct DictionaryView: View {
                 }
             }
         }
-        .padding(24)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity)
+        .background(Color(hex: "F5F4F1"))
         .onAppear {
             // 确保 Sheet 显示时 editWord 正确初始化
             if let entry = editingEntry, editWord.isEmpty {
