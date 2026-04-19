@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pencil": {
+      "command": "/Users/pony/.vscode/extensions/highagency.pencildev-0.6.44/out/mcp-server-darwin-arm64",
+      "args": []
+    }
+  }
+}
