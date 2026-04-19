@@ -178,6 +178,39 @@ async def list_diaries(
         raise HTTPException(status_code=500, detail=f"获取日记列表失败: {str(e)}")
 
 
+@router.get("/filters")
+async def get_filters(db: AsyncSession = Depends(get_db)):
+    """
+    获取可用的筛选选项
+    返回所有情绪和主题列表
+    """
+    try:
+        # 获取所有情绪
+        emotion_query = select(Diary.emotion).where(Diary.emotion.isnot(None)).distinct()
+        emotion_result = await db.execute(emotion_query)
+        emotions = sorted([e for e in emotion_result.scalars().all() if e])
+
+        # 获取所有主题（从 JSON 数组中提取）
+        topic_query = select(Diary.topics).where(Diary.topics.isnot(None))
+        topic_result = await db.execute(topic_query)
+        topics_set = set()
+        for topics_json in topic_result.scalars().all():
+            try:
+                topics_list = json.loads(topics_json)
+                topics_set.update(topics_list)
+            except:
+                pass
+        topics = sorted(list(topics_set))
+
+        return {
+            "emotions": emotions,
+            "topics": topics
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取筛选选项失败: {str(e)}")
+
+
 @router.get("/{diary_id}", response_model=DiaryResponse)
 async def get_diary(
     diary_id: int,
@@ -309,36 +342,3 @@ def _diary_to_response(diary: Diary) -> DiaryResponse:
         created_at=diary.created_at,
         updated_at=diary.updated_at
     )
-
-
-@router.get("/filters")
-async def get_filters(db: AsyncSession = Depends(get_db)):
-    """
-    获取可用的筛选选项
-    返回所有情绪和主题列表
-    """
-    try:
-        # 获取所有情绪
-        emotion_query = select(Diary.emotion).where(Diary.emotion.isnot(None)).distinct()
-        emotion_result = await db.execute(emotion_query)
-        emotions = sorted([e for e in emotion_result.scalars().all() if e])
-
-        # 获取所有主题（从 JSON 数组中提取）
-        topic_query = select(Diary.topics).where(Diary.topics.isnot(None))
-        topic_result = await db.execute(topic_query)
-        topics_set = set()
-        for topics_json in topic_result.scalars().all():
-            try:
-                topics_list = json.loads(topics_json)
-                topics_set.update(topics_list)
-            except:
-                pass
-        topics = sorted(list(topics_set))
-
-        return {
-            "emotions": emotions,
-            "topics": topics
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取筛选选项失败: {str(e)}")
