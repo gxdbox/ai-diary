@@ -10,7 +10,7 @@ import json
 from app.db.database import get_db, Diary
 from app.models.diary import (
     DiaryCreate, DiaryResponse, DiaryListResponse,
-    CleanTextRequest, CleanTextResponse
+    CleanTextRequest, CleanTextResponse, WeatherRequest
 )
 from app.services.ai_service import ai_service
 from app.services.text_cleaner import text_cleaner
@@ -339,6 +339,37 @@ def _diary_to_response(diary: Diary) -> DiaryResponse:
         key_events=json.loads(diary.key_events) if diary.key_events else [],
         recording_duration=diary.recording_duration,
         word_count=diary.word_count,
+        weather=json.loads(diary.weather) if diary.weather else None,
         created_at=diary.created_at,
         updated_at=diary.updated_at
     )
+
+
+@router.post("/weather")
+async def update_weather(
+    request: WeatherRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    更新日记天气信息（异步调用）
+    """
+    try:
+        result = await db.execute(select(Diary).where(Diary.id == request.diary_id))
+        diary = result.scalar_one_or_none()
+
+        if not diary:
+            raise HTTPException(status_code=404, detail="日记不存在")
+
+        diary.weather = json.dumps(request.weather.model_dump())
+        diary.updated_at = datetime.utcnow()
+
+        await db.commit()
+        await db.refresh(diary)
+
+        return {"success": True, "diary_id": diary.id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"更新天气失败: {str(e)}")

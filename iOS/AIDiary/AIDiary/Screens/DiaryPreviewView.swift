@@ -2,47 +2,49 @@ import SwiftUI
 
 struct DiaryPreviewView: View {
     let diary: Diary
-    
+
     @Environment(\.dismiss) private var dismiss
     @State private var activeTab: Tab = .ai
     @State private var isSaving = false
     @State private var isEditing = false
     @State private var editedText: String = ""
-    
+
     enum Tab {
         case ai, raw
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             statusBarPlaceholder
-            
+
             navBar
-            
+
             ScrollView {
                 VStack(spacing: 16) {
                     tabSelector
-                    
+
                     textCard
-                    
+
                     analysisSection
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 100)
             }
-            
+
             saveButton
         }
         .background(Color(hex: "F5F4F1"))
         .onAppear {
             editedText = diary.cleanedText ?? diary.rawText
+            // 异步获取天气（不阻塞用户）
+            fetchWeatherAsync()
         }
     }
-    
+
     private var statusBarPlaceholder: some View {
         Color.clear.frame(height: 62)
     }
-    
+
     private var navBar: some View {
         HStack {
             Button {
@@ -330,6 +332,7 @@ struct DiaryPreviewView: View {
                     keyEvents: diary.keyEvents,
                     recordingDuration: diary.recordingDuration,
                     wordCount: finalText.count,
+                    weather: diary.weather,
                     createdAt: diary.createdAt,
                     updatedAt: Date()
                 )
@@ -339,6 +342,45 @@ struct DiaryPreviewView: View {
                 await MainActor.run {
                     NotificationCenter.default.post(name: .diaryDidUpdate, object: nil)
                 }
+            }
+        }
+    }
+
+    // 异步获取天气（不阻塞用户流程）
+    private func fetchWeatherAsync() {
+        Task.detached(priority: .background) {
+            // 1. 获取位置
+            let locationService = LocationService.shared
+            let location = await withCheckedContinuation { continuation in
+                locationService.getCurrentLocation { loc in
+                    continuation.resume(returning: loc)
+                }
+            }
+
+            guard let loc = location else {
+                print("无法获取位置，跳过天气")
+                return
+            }
+
+            // 2. 获取天气
+            let weatherService = WeatherService.shared
+            let weather = await withCheckedContinuation { continuation in
+                weatherService.getWeather(location: loc) { w in
+                    continuation.resume(returning: w)
+                }
+            }
+
+            guard let w = weather else {
+                print("无法获取天气，跳过")
+                return
+            }
+
+            // 3. 更新天气到后端（异步，用户无感知）
+            do {
+                try await APIService.shared.updateWeather(diaryId: diary.id, weather: w)
+                print("天气已关联到日记: \(w.location) \(w.temperature)°C \(w.weather)")
+            } catch {
+                print("更新天气失败: \(error.localizedDescription)")
             }
         }
     }
@@ -360,6 +402,7 @@ struct DiaryPreviewView: View {
             keyEvents: ["公园散步"],
             recordingDuration: 60,
             wordCount: 20,
+            weather: Weather(temperature: 26, weather: "晴", weatherIcon: "100", location: "北京"),
             createdAt: Date(),
             updatedAt: Date()
         )

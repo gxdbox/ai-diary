@@ -33,6 +33,7 @@ class Diary(Base):
     key_events = Column(Text, nullable=True, comment="关键事件JSON")
     recording_duration = Column(Integer, nullable=True, comment="录音时长(秒)")
     word_count = Column(Integer, default=0, comment="字数")
+    weather = Column(Text, nullable=True, comment="天气信息JSON")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 

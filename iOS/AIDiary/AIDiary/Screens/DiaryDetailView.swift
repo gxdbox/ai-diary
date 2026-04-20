@@ -112,10 +112,21 @@ struct DiaryDetailView: View {
 
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // 天气和日期
+            if let weather = displayDiary.weather {
+                HStack(spacing: 8) {
+                    Text(weather.emoji)
+                        .font(.system(size: 18))
+                    Text("\(weather.location) · \(weather.temperature)°C \(weather.weather)")
+                        .font(.system(size: 14))
+                        .foregroundColor(Color(hex: "6D6C6A"))
+                }
+            }
+
             Text(displayDiary.createdAt, style: .date)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(Color(hex: "1A1918"))
-            
+
             HStack(spacing: 8) {
                 if let duration = displayDiary.recordingDuration {
                     let minutes = duration / 60

@@ -14,6 +14,7 @@ struct Diary: Codable, Identifiable, Hashable {
     let keyEvents: [String]?
     let recordingDuration: Int?
     let wordCount: Int
+    let weather: Weather?
     let createdAt: Date
     let updatedAt: Date
 
@@ -31,8 +32,28 @@ struct Diary: Codable, Identifiable, Hashable {
         case keyEvents = "key_events"
         case recordingDuration = "recording_duration"
         case wordCount = "word_count"
+        case weather
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+    }
+}
+
+struct Weather: Codable {
+    let temperature: Int
+    let weather: String
+    let weatherIcon: String
+    let location: String
+
+    // 天气图标映射（和风天气图标代码 → emoji）
+    var emoji: String {
+        switch weatherIcon {
+        case "100", "150": return "☀️"  // 晴
+        case "101", "102", "103", "104", "151", "152", "153", "154": return "☁️"  // 多云
+        case "300", "301", "302", "303", "304", "305", "306", "307", "308", "309", "310", "311", "312", "313", "314", "315", "316", "317", "318", "350", "351", "352", "353", "354", "355", "356", "357", "358", "359", "399": return "🌧️"  // 雨
+        case "400", "401", "402", "403", "404", "405", "406", "407", "408", "409", "410", "450", "451", "452", "453", "454", "455", "456", "457", "458", "459", "499": return "❄️"  // 雪
+        case "500", "501", "502", "503", "504", "507", "508", "509", "510", "511", "512", "513", "514", "515", "550", "551", "552", "553", "554", "555", "556", "557", "558", "559", "599": return "🌫️"  // 雾
+        default: return "🌤️"
+        }
     }
 }
 

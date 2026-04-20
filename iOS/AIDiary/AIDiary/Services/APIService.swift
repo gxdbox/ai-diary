@@ -174,6 +174,30 @@ class APIService {
         let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)
     }
+
+    // ============ 天气相关 API ============
+
+    func updateWeather(diaryId: Int, weather: Weather) async throws {
+        var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/weather")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "diary_id": diaryId,
+            "weather": [
+                "temperature": weather.temperature,
+                "weather": weather.weather,
+                "weather_icon": weather.weatherIcon,
+                "location": weather.location
+            ]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
 }
 
 private struct InsightsResponse: Codable {

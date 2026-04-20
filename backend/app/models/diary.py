@@ -27,6 +27,7 @@ class DiaryResponse(BaseModel):
     key_events: Optional[List[str]] = []
     recording_duration: Optional[int] = None
     word_count: int = 0
+    weather: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 
@@ -95,3 +96,17 @@ class SearchResponse(BaseModel):
     results: List[SearchResult]
     query: str
     total: int
+
+
+class WeatherData(BaseModel):
+    """天气数据"""
+    temperature: int = Field(..., description="温度")
+    weather: str = Field(..., description="天气类型")
+    weather_icon: str = Field(..., description="天气图标代码")
+    location: str = Field(..., description="城市")
+
+
+class WeatherRequest(BaseModel):
+    """天气更新请求"""
+    diary_id: int = Field(..., description="日记ID")
+    weather: WeatherData = Field(..., description="天气数据")
