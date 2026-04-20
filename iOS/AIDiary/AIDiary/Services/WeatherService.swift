@@ -4,20 +4,25 @@ import CoreLocation
 class WeatherService {
     static let shared = WeatherService()
 
-    // OpenWeatherMap API（免费，1000次/天）
-    // 用户需要替换为自己的 API Key：https://openweathermap.org/api
-    private let apiKey = "YOUR_OPENWEATHERMAP_API_KEY"  // 替换为实际 Key
-    private let baseURL = "https://api.openweathermap.org/data/2.5/weather"
+    // 和风天气 API 配置
+    // 凭据ID：KM58GPU4UT
+    private let qweatherApiKey = "a7272b45e9db411ebfdf478d694644c9"
+    private let qweatherBaseURL = "https://devapi.qweather.com/v7/weather/now"
 
     private init() {}
 
     func getWeather(location: CLLocation, completion: @escaping (Weather?) -> Void) {
-        let urlString = "\(baseURL)?lat=\(location.coordinate.latitude)&lon=\(location.coordinate.longitude)&appid=\(apiKey)&units=metric&lang=zh_cn"
+        // 和风天气 location 参数格式：经度,纬度
+        let locationParam = "\(location.coordinate.longitude),\(location.coordinate.latitude)"
+        let urlString = "\(qweatherBaseURL)?location=\(locationParam)&key=\(qweatherApiKey)"
 
         guard let url = URL(string: urlString) else {
+            print("天气URL构建失败")
             completion(nil)
             return
         }
+
+        print("请求天气: \(urlString)")
 
         URLSession.shared.dataTask(with: url) { data, response, error in
             guard let data = data, error == nil else {
@@ -26,16 +31,35 @@ class WeatherService {
                 return
             }
 
+            // 打印响应便于调试
+            if let jsonString = String(data: data, encoding: .utf8) {
+                print("天气响应: \(jsonString)")
+            }
+
             do {
-                let result = try JSONDecoder().decode(OpenWeatherResponse.self, from: data)
+                let result = try JSONDecoder().decode(QWeatherResponse.self, from: data)
+
+                // 检查响应状态码
+                if result.code != "200" {
+                    print("和风天气返回错误码: \(result.code)")
+                    completion(nil)
+                    return
+                }
+
+                guard let now = result.now else {
+                    print("天气数据为空")
+                    completion(nil)
+                    return
+                }
 
                 let weather = Weather(
-                    temperature: Int(result.main.temp),
-                    weather: result.weather.first?.description ?? "未知",
-                    weatherIcon: result.weather.first?.icon ?? "",
-                    location: result.name
+                    temperature: Int(now.temp) ?? 0,
+                    weather: now.text,
+                    weatherIcon: now.icon,
+                    location: ""  // 城市名需要额外API，这里暂时留空
                 )
 
+                print("天气获取成功: \(weather.temperature)°C \(weather.weather)")
                 completion(weather)
             } catch {
                 print("天气解析失败: \(error.localizedDescription)")
@@ -43,74 +67,17 @@ class WeatherService {
             }
         }.resume()
     }
-
-    // 使用和风天气 API（中国用户推荐）
-    // https://dev.qweather.com/
-    func getWeatherFromQWeather(location: CLLocation, completion: @escaping (Weather?) -> Void) {
-        // 和风天气需要 API Key，用户可自行申请
-        // 这里提供一个占位实现，实际使用时替换
-        let apiKey = "YOUR_QWEATHER_API_KEY"
-        let urlString = "https://devapi.qweather.com/v7/weather/now?location=\(location.coordinate.longitude),\(location.coordinate.latitude)&key=\(apiKey)"
-
-        guard let url = URL(string: urlString) else {
-            completion(nil)
-            return
-        }
-
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            guard let data = data, error == nil else {
-                completion(nil)
-                return
-            }
-
-            do {
-                let result = try JSONDecoder().decode(QWeatherResponse.self, from: data)
-
-                guard let now = result.now else {
-                    completion(nil)
-                    return
-                }
-
-                let weather = Weather(
-                    temperature: Int(now.temp),
-                    weather: now.text,
-                    weatherIcon: now.icon,
-                    location: ""  // 需要额外调用城市查询 API
-                )
-
-                completion(weather)
-            } catch {
-                print("和风天气解析失败: \(error.localizedDescription)")
-                completion(nil)
-            }
-        }.resume()
-    }
-}
-
-// OpenWeatherMap 响应结构
-struct OpenWeatherResponse: Codable {
-    let main: Main
-    let weather: [WeatherDetail]
-    let name: String
-
-    struct Main: Codable {
-        let temp: Double
-    }
-
-    struct WeatherDetail: Codable {
-        let description: String
-        let icon: String
-    }
 }
 
 // 和风天气响应结构
+// https://dev.qweather.com/docs/api/weather/weather-now/
 struct QWeatherResponse: Codable {
-    let code: String
-    let now: QWeatherNow?
+    let code: String           // 状态码，200表示成功
+    let now: QWeatherNow?      // 当前天气数据
 
     struct QWeatherNow: Codable {
-        let temp: String
-        let text: String
-        let icon: String
+        let temp: String       // 温度
+        let text: String       // 天气现象文字描述
+        let icon: String       // 天气图标代码
     }
 }
