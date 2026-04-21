@@ -44,6 +44,13 @@ struct Weather: Codable, Equatable, Hashable {
     let weatherIcon: String
     let location: String
 
+    enum CodingKeys: String, CodingKey {
+        case temperature
+        case weather
+        case weatherIcon = "weather_icon"
+        case location
+    }
+
     // 天气图标映射（和风天气图标代码 → emoji）
     var emoji: String {
         switch weatherIcon {
