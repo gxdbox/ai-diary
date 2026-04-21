@@ -2,13 +2,12 @@ import Foundation
 import CoreLocation
 import Combine
 
-class LocationService: NSObject, ObservableObject, CLLocationManagerDelegate {
+class LocationService: NSObject, CLLocationManagerDelegate, Sendable {
     static let shared = LocationService()
 
     private let locationManager = CLLocationManager()
-    @Published var currentLocation: CLLocation?
-    @Published var currentCity: String?
-    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    var currentLocation: CLLocation?
+    var currentCity: String?
 
     private var locationCompletion: ((CLLocation?) -> Void)?
 
@@ -22,26 +21,26 @@ class LocationService: NSObject, ObservableObject, CLLocationManagerDelegate {
         locationManager.requestWhenInUseAuthorization()
     }
 
-    func getCurrentLocation(completion: @escaping (CLLocation?) -> Void) {
-        locationCompletion = completion
+    nonisolated func getCurrentLocation(completion: @escaping (CLLocation?) -> Void) {
+        Task { @MainActor in
+            locationCompletion = completion
 
-        switch locationManager.authorizationStatus {
-        case .authorizedWhenInUse, .authorizedAlways:
-            locationManager.requestLocation()
-        case .notDetermined:
-            requestAuthorization()
-        case .denied, .restricted:
-            completion(nil)
-        @unknown default:
-            completion(nil)
+            switch locationManager.authorizationStatus {
+            case .authorizedWhenInUse, .authorizedAlways:
+                locationManager.requestLocation()
+            case .notDetermined:
+                requestAuthorization()
+            case .denied, .restricted:
+                completion(nil)
+            @unknown default:
+                completion(nil)
+            }
         }
     }
 
     // MARK: - CLLocationManagerDelegate
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        authorizationStatus = manager.authorizationStatus
-
         if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
             locationManager.requestLocation()
         }
@@ -56,9 +55,7 @@ class LocationService: NSObject, ObservableObject, CLLocationManagerDelegate {
         geocoder.reverseGeocodeLocation(location) { placemarks, error in
             if let placemark = placemarks?.first {
                 let city = placemark.locality ?? placemark.administrativeArea ?? "未知"
-                DispatchQueue.main.async {
-                    self.currentCity = city
-                }
+                self.currentCity = city
             }
         }
 

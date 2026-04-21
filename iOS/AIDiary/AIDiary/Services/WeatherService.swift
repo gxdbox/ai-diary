@@ -1,7 +1,7 @@
 import Foundation
 import CoreLocation
 
-class WeatherService {
+class WeatherService: Sendable {
     static let shared = WeatherService()
 
     // 和风天气 API 配置
@@ -11,7 +11,7 @@ class WeatherService {
 
     private init() {}
 
-    func getWeather(location: CLLocation, completion: @escaping (Weather?) -> Void) {
+    nonisolated func getWeather(location: CLLocation, completion: @escaping (Weather?) -> Void) {
         // 和风天气 location 参数格式：经度,纬度
         let locationParam = "\(location.coordinate.longitude),\(location.coordinate.latitude)"
         let urlString = "\(qweatherBaseURL)?location=\(locationParam)&key=\(qweatherApiKey)"
@@ -71,11 +71,11 @@ class WeatherService {
 
 // 和风天气响应结构
 // https://dev.qweather.com/docs/api/weather/weather-now/
-struct QWeatherResponse: Codable, Sendable {
+nonisolated struct QWeatherResponse: Codable {
     let code: String           // 状态码，200表示成功
     let now: QWeatherNow?      // 当前天气数据
 
-    struct QWeatherNow: Codable, Sendable {
+    nonisolated struct QWeatherNow: Codable {
         let temp: String       // 温度
         let text: String       // 天气现象文字描述
         let icon: String       // 天气图标代码
