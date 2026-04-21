@@ -16,11 +16,16 @@ class CachedDiary {
     var keyEvents: [String]?
     var recordingDuration: Int?
     var wordCount: Int
+    // 天气字段（拆分存储，SwiftData 不支持复杂 struct）
+    var weatherTemperature: Int?
+    var weatherText: String?
+    var weatherIcon: String?
+    var weatherLocation: String?
     var createdAt: Date
     var updatedAt: Date
     var cachedAt: Date
 
-    init(id: Int, rawText: String, cleanedText: String?, emotion: String?, emotionScore: Double?, emotionKeywords: [String]?, secondaryEmotions: [String]?, emotionDimension: String?, emotionConfidence: Double?, topics: [String]?, keyEvents: [String]?, recordingDuration: Int?, wordCount: Int, createdAt: Date, updatedAt: Date) {
+    init(id: Int, rawText: String, cleanedText: String?, emotion: String?, emotionScore: Double?, emotionKeywords: [String]?, secondaryEmotions: [String]?, emotionDimension: String?, emotionConfidence: Double?, topics: [String]?, keyEvents: [String]?, recordingDuration: Int?, wordCount: Int, weather: Weather?, createdAt: Date, updatedAt: Date) {
         self.id = id
         self.rawText = rawText
         self.cleanedText = cleanedText
@@ -34,13 +39,28 @@ class CachedDiary {
         self.keyEvents = keyEvents
         self.recordingDuration = recordingDuration
         self.wordCount = wordCount
+        // 存储 weather
+        if let w = weather {
+            self.weatherTemperature = w.temperature
+            self.weatherText = w.weather
+            self.weatherIcon = w.weatherIcon
+            self.weatherLocation = w.location
+        }
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.cachedAt = Date()
     }
 
     func toDiary() -> Diary {
-        Diary(
+        // 从拆分字段重建 Weather
+        let weather: Weather? = {
+            if let temp = weatherTemperature, let text = weatherText, let icon = weatherIcon, let loc = weatherLocation {
+                return Weather(temperature: temp, weather: text, weatherIcon: icon, location: loc)
+            }
+            return nil
+        }()
+
+        return Diary(
             id: id,
             rawText: rawText,
             cleanedText: cleanedText,
@@ -54,6 +74,7 @@ class CachedDiary {
             keyEvents: keyEvents,
             recordingDuration: recordingDuration,
             wordCount: wordCount,
+            weather: weather,
             createdAt: createdAt,
             updatedAt: updatedAt
         )

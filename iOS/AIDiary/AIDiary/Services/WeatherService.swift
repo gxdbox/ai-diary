@@ -71,11 +71,11 @@ class WeatherService {
 
 // 和风天气响应结构
 // https://dev.qweather.com/docs/api/weather/weather-now/
-struct QWeatherResponse: Codable {
+struct QWeatherResponse: Codable, Sendable {
     let code: String           // 状态码，200表示成功
     let now: QWeatherNow?      // 当前天气数据
 
-    struct QWeatherNow: Codable {
+    struct QWeatherNow: Codable, Sendable {
         let temp: String       // 温度
         let text: String       // 天气现象文字描述
         let icon: String       // 天气图标代码

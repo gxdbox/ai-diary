@@ -497,6 +497,7 @@ struct DiaryDetailView: View {
                 keyEvents: ["完成项目"],
                 recordingDuration: 120,
                 wordCount: 50,
+                weather: Weather(temperature: 26, weather: "晴", weatherIcon: "100", location: "北京"),
                 createdAt: Date(),
                 updatedAt: Date()
             )

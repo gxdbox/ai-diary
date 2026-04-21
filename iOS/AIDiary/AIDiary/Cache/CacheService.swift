@@ -41,6 +41,7 @@ actor CacheService {
                 keyEvents: diary.keyEvents,
                 recordingDuration: diary.recordingDuration,
                 wordCount: diary.wordCount,
+                weather: diary.weather,
                 createdAt: diary.createdAt,
                 updatedAt: diary.updatedAt
             )
@@ -70,6 +71,18 @@ actor CacheService {
             existing.keyEvents = diary.keyEvents
             existing.recordingDuration = diary.recordingDuration
             existing.wordCount = diary.wordCount
+            // 更新天气
+            if let w = diary.weather {
+                existing.weatherTemperature = w.temperature
+                existing.weatherText = w.weather
+                existing.weatherIcon = w.weatherIcon
+                existing.weatherLocation = w.location
+            } else {
+                existing.weatherTemperature = nil
+                existing.weatherText = nil
+                existing.weatherIcon = nil
+                existing.weatherLocation = nil
+            }
             existing.createdAt = diary.createdAt
             existing.updatedAt = diary.updatedAt
             existing.cachedAt = Date()
@@ -89,6 +102,7 @@ actor CacheService {
                 keyEvents: diary.keyEvents,
                 recordingDuration: diary.recordingDuration,
                 wordCount: diary.wordCount,
+                weather: diary.weather,
                 createdAt: diary.createdAt,
                 updatedAt: diary.updatedAt
             )
