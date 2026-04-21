@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import CoreLocation
 
 @main
 struct AIDiaryApp: App {
@@ -28,6 +29,8 @@ struct AIDiaryApp: App {
 class AppState: ObservableObject {
     func setup() async {
         await CacheService.shared.setup()
-        print("App 启动完成，缓存服务已初始化")
+        // 初始化 LocationService，确保 locationManager delegate 已设置
+        _ = LocationService.shared
+        print("App 启动完成，缓存服务和位置服务已初始化")
     }
 }
