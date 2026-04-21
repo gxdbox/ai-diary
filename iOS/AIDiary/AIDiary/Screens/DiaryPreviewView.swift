@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 struct DiaryPreviewView: View {
     let diary: Diary
@@ -348,11 +349,12 @@ struct DiaryPreviewView: View {
 
     // 异步获取天气（不阻塞用户流程）
     private func fetchWeatherAsync() {
-        Task.detached(priority: .background) {
+        Task(priority: .background) {
+            print("开始获取天气...")
+
             // 1. 获取位置
-            let locationService = LocationService.shared
             let location = await withCheckedContinuation { continuation in
-                locationService.getCurrentLocation { loc in
+                LocationService.shared.getCurrentLocation { loc in
                     continuation.resume(returning: loc)
                 }
             }
@@ -362,10 +364,11 @@ struct DiaryPreviewView: View {
                 return
             }
 
+            print("获取位置成功: \(loc.coordinate.latitude), \(loc.coordinate.longitude)")
+
             // 2. 获取天气
-            let weatherService = WeatherService.shared
             let weather = await withCheckedContinuation { continuation in
-                weatherService.getWeather(location: loc) { w in
+                WeatherService.shared.getWeather(location: loc) { w in
                     continuation.resume(returning: w)
                 }
             }
@@ -374,6 +377,8 @@ struct DiaryPreviewView: View {
                 print("无法获取天气，跳过")
                 return
             }
+
+            print("获取天气成功: \(w.temperature)°C \(w.weather)")
 
             // 3. 更新天气到后端（异步，用户无感知）
             do {

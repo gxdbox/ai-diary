@@ -1,8 +1,7 @@
 import Foundation
 import CoreLocation
-import Combine
 
-class LocationService: NSObject, CLLocationManagerDelegate, Sendable {
+class LocationService: NSObject, CLLocationManagerDelegate {
     static let shared = LocationService()
 
     private let locationManager = CLLocationManager()
@@ -17,38 +16,50 @@ class LocationService: NSObject, CLLocationManagerDelegate, Sendable {
         locationManager.desiredAccuracy = kCLLocationAccuracyKilometer  // 城市级精度，节省电量
     }
 
-    func requestAuthorization() {
-        locationManager.requestWhenInUseAuthorization()
-    }
+    func getCurrentLocation(completion: @escaping (CLLocation?) -> Void) {
+        // 先保存 completion handler，确保授权回调后能使用
+        locationCompletion = completion
 
-    nonisolated func getCurrentLocation(completion: @escaping (CLLocation?) -> Void) {
-        Task { @MainActor in
-            locationCompletion = completion
+        let status = locationManager.authorizationStatus
 
-            switch locationManager.authorizationStatus {
-            case .authorizedWhenInUse, .authorizedAlways:
-                locationManager.requestLocation()
-            case .notDetermined:
-                requestAuthorization()
-            case .denied, .restricted:
-                completion(nil)
-            @unknown default:
-                completion(nil)
-            }
+        switch status {
+        case .authorizedWhenInUse, .authorizedAlways:
+            locationManager.requestLocation()
+        case .notDetermined:
+            // 请求授权，授权完成后 locationManagerDidChangeAuthorization 会调用 requestLocation
+            locationManager.requestWhenInUseAuthorization()
+        case .denied, .restricted:
+            print("位置权限被拒绝")
+            completion(nil)
+            locationCompletion = nil
+        @unknown default:
+            completion(nil)
+            locationCompletion = nil
         }
     }
 
     // MARK: - CLLocationManagerDelegate
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
-            locationManager.requestLocation()
+        let status = manager.authorizationStatus
+
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
+            // 授权成功后，如果有等待的 completion，请求位置
+            if locationCompletion != nil {
+                locationManager.requestLocation()
+            }
+        } else if status == .denied || status == .restricted {
+            // 授权被拒绝
+            print("位置权限被拒绝")
+            locationCompletion?(nil)
+            locationCompletion = nil
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         currentLocation = location
+        print("获取位置成功: \(location.coordinate.latitude), \(location.coordinate.longitude)")
 
         // 获取城市名称（反向地理编码）
         let geocoder = CLGeocoder()
@@ -56,6 +67,7 @@ class LocationService: NSObject, CLLocationManagerDelegate, Sendable {
             if let placemark = placemarks?.first {
                 let city = placemark.locality ?? placemark.administrativeArea ?? "未知"
                 self.currentCity = city
+                print("城市: \(city)")
             }
         }
 
