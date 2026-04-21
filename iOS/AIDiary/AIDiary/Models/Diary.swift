@@ -38,7 +38,7 @@ struct Diary: Codable, Identifiable, Hashable {
     }
 }
 
-struct Weather: Codable {
+struct Weather: Codable, Equatable, Hashable {
     let temperature: Int
     let weather: String
     let weatherIcon: String
