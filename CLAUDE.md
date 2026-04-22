@@ -202,6 +202,52 @@ curl https://51pic.xyz/health
 
 ---
 
+## 功能开发完成后的清理流程（重要）
+
+**每次功能开发完成后，必须执行以下清理步骤：**
+
+### 清理内容：
+
+1. **调试日志**
+   - 移除所有 `print()` 调试语句（特别是带 emoji 标记的）
+   - 保留必要的错误日志（使用 `logger` 或 `NSLog`）
+
+2. **测试数据**
+   - 检查数据库是否有测试记录需要删除
+   - 检查代码中是否有硬编码的测试值
+
+3. **不必要的注释**
+   - 移除临时性的调试注释
+   - 保留解释复杂逻辑的必要注释
+
+### 清理流程：
+
+```bash
+# 1. 检查调试日志
+grep -r "print(" iOS/AIDiary/AIDiary/Sources/
+
+# 2. 检查测试数据关键词
+grep -r "测试|test|debug|DEBUG" backend/app/
+grep -r "测试|test|debug" iOS/AIDiary/AIDiary/
+
+# 3. 清理并提交
+git add <cleaned files>
+git commit -m "chore: 清理调试日志，精简代码"
+
+# 4. 合并分支到 master
+git checkout master
+git merge <feature-branch>
+git push origin master
+```
+
+### 注意：
+
+- **生产环境的 fallback 机制要保留**（如 `_mock_response`）
+- **必要的错误处理和日志要保留**
+- **功能说明注释可保留**，但调试注释要删除
+
+---
+
 ## Claude 工作流程承诺
 
 **在每次对话中，Claude 将：**
