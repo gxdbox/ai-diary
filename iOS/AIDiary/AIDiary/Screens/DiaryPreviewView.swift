@@ -385,13 +385,25 @@ struct DiaryPreviewView: View {
                 return
             }
 
-            print("🌤️ ✅ 获取天气成功: \(w.temperature)°C \(w.weather)")
+            // 获取城市名（LocationService 通过反向地理编码获取）
+            let city = LocationService.shared.currentCity ?? "未知"
+            print("🌤️ 城市: \(city)")
+
+            // 创建包含城市名的 Weather 对象
+            let weatherWithCity = Weather(
+                temperature: w.temperature,
+                weather: w.weather,
+                weatherIcon: w.weatherIcon,
+                location: city
+            )
+
+            print("🌤️ ✅ 获取天气成功: \(city) \(weatherWithCity.temperature)°C \(weatherWithCity.weather)")
 
             // 3. 更新天气到后端（异步，用户无感知）
             print("🌤️ Step 3: 更新天气到后端...")
             do {
-                try await APIService.shared.updateWeather(diaryId: diary.id, weather: w)
-                print("🌤️ ✅✅✅ 天气已关联到日记: \(w.location) \(w.temperature)°C \(w.weather)")
+                try await APIService.shared.updateWeather(diaryId: diary.id, weather: weatherWithCity)
+                print("🌤️ ✅✅✅ 天气已关联到日记: \(city) \(weatherWithCity.temperature)°C \(weatherWithCity.weather)")
             } catch {
                 print("🌤️ ❌ 更新天气失败: \(error.localizedDescription)")
             }
