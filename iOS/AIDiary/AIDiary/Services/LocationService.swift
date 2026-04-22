@@ -4,7 +4,7 @@ import CoreLocation
 class LocationService: NSObject, CLLocationManagerDelegate {
     static let shared = LocationService()
 
-    private let locationManager = CLLocationManager()
+    private let locationManager: CLLocationManager
     var currentLocation: CLLocation?
     var currentCity: String?
 
@@ -17,13 +17,21 @@ class LocationService: NSObject, CLLocationManagerDelegate {
     private var authTimeoutTimer: Timer?
 
     private override init() {
+        // 先创建 locationManager
+        locationManager = CLLocationManager()
         super.init()
+        // 再设置 delegate
         locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyKilometer  // 城市级精度，节省电量
+        locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+
+        // 打印初始化时的授权状态（注意：此时可能不准确，需要等回调）
+        print("📍 LocationService 初始化 - 初始授权状态: \(locationManager.authorizationStatus.rawValue)")
+        print("📍 系统位置服务启用: \(CLLocationManager.locationServicesEnabled())")
     }
 
     // 公开的授权请求方法
     func requestAuthorization() {
+        print("📍 requestAuthorization 调用，当前状态: \(locationManager.authorizationStatus.rawValue)")
         locationManager.requestWhenInUseAuthorization()
     }
 
