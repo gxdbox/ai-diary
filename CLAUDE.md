@@ -168,6 +168,40 @@ curl https://51pic.xyz/health
 
 ---
 
+## iOS 权限问题诊断流程（重要教训）
+
+**遇到 iOS 系统权限问题时，必须先检查项目配置，再检查代码！**
+
+### 正确的诊断顺序：
+
+1. **检查 project.pbxproj 配置**
+   ```bash
+   grep "INFOPLIST_KEY_NS" project.pbxproj
+   grep "GENERATE_INFOPLIST_FILE" project.pbxproj
+   ```
+   - 如果 `GENERATE_INFOPLIST_FILE = YES`，权限描述必须通过 `INFOPLIST_KEY_*` 配置
+   - 自定义 Info.plist 文件可能不生效
+
+2. **验证权限描述是否存在**
+   - 位置：`INFOPLIST_KEY_NSLocationWhenInUseUsageDescription`
+   - 相机：`INFOPLIST_KEY_NSCameraUsageDescription`
+   - 麦克风：`INFOPLIST_KEY_NSMicrophoneUsageDescription`
+   - 照片：`INFOPLIST_KEY_NSPhotoLibraryUsageDescription`
+
+3. **配置正确后再检查代码逻辑**
+
+### 错误的诊断方式（教训）：
+
+❌ 直接修改代码逻辑、添加调试日志
+❌ 假设配置正确，在代码层面反复调试
+❌ 忽略用户提供的线索（如"只有两个选项而不是四个")
+
+### 经验教训：
+
+2026-04-22 的位置权限问题，反复调试几十次才解决。根本原因是 `GENERATE_INFOPLIST_FILE = YES` 导致自定义 Info.plist 不生效，需要通过 `INFOPLIST_KEY_NSLocationWhenInUseUsageDescription` 在 project.pbxproj 中配置。
+
+---
+
 ## Claude 工作流程承诺
 
 **在每次对话中，Claude 将：**
