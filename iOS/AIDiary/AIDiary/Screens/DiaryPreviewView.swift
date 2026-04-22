@@ -312,35 +312,26 @@ struct DiaryPreviewView: View {
         NotificationCenter.default.post(name: .diaryConfirmSave, object: nil)
         dismiss()
 
-        // 后台异步更新缓存（不阻塞用户）
+        // 后台异步更新
         Task {
             let finalText = editedText.isEmpty ? (diary.cleanedText ?? diary.rawText) : editedText
 
-            // 只有编辑了才更新
-            if finalText != (diary.cleanedText ?? diary.rawText) {
-                let updatedDiary = Diary(
-                    id: diary.id,
-                    rawText: diary.rawText,
-                    cleanedText: finalText,
-                    emotion: diary.emotion,
-                    emotionScore: diary.emotionScore,
-                    emotionKeywords: diary.emotionKeywords,
-                    secondaryEmotions: diary.secondaryEmotions,
-                    emotionDimension: diary.emotionDimension,
-                    emotionConfidence: diary.emotionConfidence,
-                    topics: diary.topics,
-                    keyEvents: diary.keyEvents,
-                    recordingDuration: diary.recordingDuration,
-                    wordCount: finalText.count,
-                    weather: diary.weather,
-                    createdAt: diary.createdAt,
-                    updatedAt: Date()
-                )
+            // 判断是否真正编辑了内容
+            let originalText = diary.cleanedText ?? diary.rawText
+            if finalText != originalText {
+                do {
+                    // 1. 先调用后端 API 更新
+                    let updatedDiary = try await APIService.shared.updateDiary(id: diary.id, cleanedText: finalText)
 
-                await CacheService.shared.saveDiary(updatedDiary)
+                    // 2. 更新本地缓存
+                    await CacheService.shared.saveDiary(updatedDiary)
 
-                await MainActor.run {
-                    NotificationCenter.default.post(name: .diaryDidUpdate, object: nil)
+                    // 3. 发送通知刷新时间轴
+                    await MainActor.run {
+                        NotificationCenter.default.post(name: .diaryDidUpdate, object: nil)
+                    }
+                } catch {
+                    // 更新失败，静默处理
                 }
             }
         }
