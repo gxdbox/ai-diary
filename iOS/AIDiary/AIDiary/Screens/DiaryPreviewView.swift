@@ -37,8 +37,6 @@ struct DiaryPreviewView: View {
         .background(Color(hex: "F5F4F1"))
         .onAppear {
             editedText = diary.cleanedText ?? diary.rawText
-            print("📍 DiaryPreviewView onAppear - diary.id: \(diary.id)")
-            // 异步获取天气（不阻塞用户）
             fetchWeatherAsync()
         }
     }
@@ -350,46 +348,27 @@ struct DiaryPreviewView: View {
 
     // 异步获取天气（不阻塞用户流程）
     private func fetchWeatherAsync() {
-        print("🌤️ ====== 开始天气获取流程 ======")
-        print("🌤️ diary.id = \(diary.id)")
-
         Task(priority: .background) {
-            print("🌤️ Step 1: 请求位置权限...")
-
             // 1. 获取位置
             let location = await withCheckedContinuation { continuation in
                 LocationService.shared.getCurrentLocation { loc in
-                    print("🌤️ LocationService 回调: \(loc != nil ? "有位置" : "无位置")")
                     continuation.resume(returning: loc)
                 }
             }
 
-            guard let loc = location else {
-                print("🌤️ ❌ 无法获取位置，跳过天气")
-                return
-            }
-
-            print("🌤️ ✅ 获取位置成功: \(loc.coordinate.latitude), \(loc.coordinate.longitude)")
+            guard let loc = location else { return }
 
             // 2. 获取天气
-            print("🌤️ Step 2: 调用和风天气 API...")
             let weather = await withCheckedContinuation { continuation in
                 WeatherService.shared.getWeather(location: loc) { w in
-                    print("🌤️ WeatherService 回调: \(w != nil ? "有天气" : "无天气")")
                     continuation.resume(returning: w)
                 }
             }
 
-            guard let w = weather else {
-                print("🌤️ ❌ 无法获取天气，跳过")
-                return
-            }
+            guard let w = weather else { return }
 
-            // 获取城市名（LocationService 通过反向地理编码获取）
+            // 3. 获取城市名，创建 Weather 对象并更新到后端
             let city = LocationService.shared.currentCity ?? "未知"
-            print("🌤️ 城市: \(city)")
-
-            // 创建包含城市名的 Weather 对象
             let weatherWithCity = Weather(
                 temperature: w.temperature,
                 weather: w.weather,
@@ -397,15 +376,10 @@ struct DiaryPreviewView: View {
                 location: city
             )
 
-            print("🌤️ ✅ 获取天气成功: \(city) \(weatherWithCity.temperature)°C \(weatherWithCity.weather)")
-
-            // 3. 更新天气到后端（异步，用户无感知）
-            print("🌤️ Step 3: 更新天气到后端...")
             do {
                 try await APIService.shared.updateWeather(diaryId: diary.id, weather: weatherWithCity)
-                print("🌤️ ✅✅✅ 天气已关联到日记: \(city) \(weatherWithCity.temperature)°C \(weatherWithCity.weather)")
             } catch {
-                print("🌤️ ❌ 更新天气失败: \(error.localizedDescription)")
+                // 静默失败，不影响用户体验
             }
         }
     }
