@@ -21,18 +21,22 @@ class LocationService: NSObject, CLLocationManagerDelegate {
         locationCompletion = completion
 
         let status = locationManager.authorizationStatus
+        print("📍 LocationService.getCurrentLocation - 授权状态: \(status.rawValue)")
 
         switch status {
         case .authorizedWhenInUse, .authorizedAlways:
+            print("📍 已授权，请求位置...")
             locationManager.requestLocation()
         case .notDetermined:
             // 请求授权，授权完成后 locationManagerDidChangeAuthorization 会调用 requestLocation
+            print("📍 未授权，请求权限弹窗...")
             locationManager.requestWhenInUseAuthorization()
         case .denied, .restricted:
-            print("位置权限被拒绝")
+            print("📍 ❌ 位置权限被拒绝")
             completion(nil)
             locationCompletion = nil
         @unknown default:
+            print("📍 ❌ 未知的授权状态")
             completion(nil)
             locationCompletion = nil
         }
@@ -42,15 +46,17 @@ class LocationService: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
+        print("📍 授权状态变更: \(status.rawValue)")
 
         if status == .authorizedWhenInUse || status == .authorizedAlways {
             // 授权成功后，如果有等待的 completion，请求位置
             if locationCompletion != nil {
+                print("📍 授权成功，请求位置...")
                 locationManager.requestLocation()
             }
         } else if status == .denied || status == .restricted {
             // 授权被拒绝
-            print("位置权限被拒绝")
+            print("📍 ❌ 授权被拒绝")
             locationCompletion?(nil)
             locationCompletion = nil
         }
