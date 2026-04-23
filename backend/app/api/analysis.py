@@ -260,23 +260,32 @@ async def get_insights(
 
 async def _calculate_streak(db: AsyncSession) -> int:
     """计算连续记录天数"""
+    # 获取所有日记日期
     result = await db.execute(
         select(Diary.created_at)
         .order_by(desc(Diary.created_at))
-        .limit(100)
     )
-    dates = [row[0].date() for row in result.fetchall()]
+    all_dates = [row[0].date() for row in result.fetchall()]
 
-    if not dates:
+    if not all_dates:
         return 0
 
-    streak = 0
-    current_date = datetime.utcnow().date()
+    # 去重：同一天多篇日记只算一天
+    unique_dates = sorted(set(all_dates), reverse=True)
 
-    for date in dates:
-        if date == current_date or date == current_date - timedelta(days=1):
+    # 用服务器本地时间判断"今天"
+    today = datetime.now().date()
+
+    # 检查最近一天是否是今天或昨天（没有日记就不算 streak）
+    if unique_dates[0] not in [today, today - timedelta(days=1)]:
+        return 0
+
+    # 从最近一天开始，严格检查连续性
+    streak = 1
+    for i in range(1, len(unique_dates)):
+        # 后一天必须比前一天少 1 天（严格连续）
+        if unique_dates[i] == unique_dates[i-1] - timedelta(days=1):
             streak += 1
-            current_date = date - timedelta(days=1)
         else:
             break
 
