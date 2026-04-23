@@ -413,6 +413,7 @@
 				DEVELOPMENT_TEAM = U99MJ484Z2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "松果日记";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "需要使用麦克风录制您的语音日记";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "获取您的位置以记录当天天气，让日记更有回忆感";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "需要语音识别权限将您的语音转换为文字";
@@ -453,6 +454,7 @@
 				DEVELOPMENT_TEAM = U99MJ484Z2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "松果日记";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "需要使用麦克风录制您的语音日记";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "获取您的位置以记录当天天气，让日记更有回忆感";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "需要语音识别权限将您的语音转换为文字";
