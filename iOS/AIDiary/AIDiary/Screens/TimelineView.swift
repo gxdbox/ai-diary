@@ -4,6 +4,9 @@ import SwiftData
 struct TimelineView: View {
     @State private var diaries: [Diary] = []
     @State private var isLoading = false
+    @State private var isLoadingMore = false
+    @State private var currentPage = 1
+    @State private var totalPages: Int?
     @State private var stats: Stats?
     @State private var selectedDiary: Diary?
     @State private var showFilterSheet = false
@@ -235,6 +238,23 @@ struct TimelineView: View {
                             showDeleteConfirm = true
                         }
                     )
+                    .onAppear {
+                        // 检测滚动到最后一个元素，触发加载更多
+                        if diary.id == diaries.last?.id && hasMoreData && !isLoadingMore {
+                            loadMoreData()
+                        }
+                    }
+                }
+
+                // 加载更多指示器
+                if isLoadingMore {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .tint(Color(hex: "C4935A"))
+                        Spacer()
+                    }
+                    .padding(.vertical, 16)
                 }
             }
             .padding(.horizontal, 16)
@@ -243,6 +263,11 @@ struct TimelineView: View {
         .refreshable {
             await refreshData()
         }
+    }
+
+    private var hasMoreData: Bool {
+        guard let total = totalPages else { return diaries.count >= 20 }
+        return currentPage < total
     }
 
     private func deleteDiary(id: Int) {
@@ -263,16 +288,22 @@ struct TimelineView: View {
 
     private func loadData() {
         isLoading = true
+        currentPage = 1
         Task {
             do {
                 let dateRange = selectedTimeRange.toDateRange()
                 let response = try await APIService.shared.fetchDiaries(
+                    page: 1,
+                    pageSize: 20,
                     emotion: selectedEmotion,
                     topic: selectedTopic,
                     startDate: dateRange.start,
                     endDate: dateRange.end
                 )
                 let statsData = try await APIService.shared.fetchStats()
+
+                // 计算总页数
+                totalPages = (response.total + response.pageSize - 1) / response.pageSize
 
                 var mergedDiaries: [Diary] = []
 
@@ -315,7 +346,49 @@ struct TimelineView: View {
                     diaries = cachedDiaries
                     stats = cachedStats
                     isLoading = false
-                    print("网络请求失败，使用缓存数据: \(error)")
+                }
+            }
+        }
+    }
+
+    private func loadMoreData() {
+        guard !isLoadingMore && hasMoreData else { return }
+        isLoadingMore = true
+        currentPage += 1
+
+        Task {
+            do {
+                let dateRange = selectedTimeRange.toDateRange()
+                let response = try await APIService.shared.fetchDiaries(
+                    page: currentPage,
+                    pageSize: 20,
+                    emotion: selectedEmotion,
+                    topic: selectedTopic,
+                    startDate: dateRange.start,
+                    endDate: dateRange.end
+                )
+
+                await MainActor.run {
+                    // 合并新数据
+                    var allDiaries = diaries
+                    // 去重：避免重复添加
+                    let existingIds = Set(allDiaries.map { $0.id })
+                    for newDiary in response.items where !existingIds.contains(newDiary.id) {
+                        allDiaries.append(newDiary)
+                    }
+                    allDiaries.sort { $0.createdAt > $1.createdAt }
+                    diaries = allDiaries
+                    isLoadingMore = false
+                }
+
+                // 更新缓存
+                if selectedEmotion == nil && selectedTopic == nil && selectedTimeRange == .all {
+                    await CacheService.shared.saveDiaries(diaries)
+                }
+            } catch {
+                await MainActor.run {
+                    currentPage -= 1  // 失败时回退页码
+                    isLoadingMore = false
                 }
             }
         }
@@ -336,15 +409,21 @@ struct TimelineView: View {
 
     private func refreshData() async {
         isLoading = true
+        currentPage = 1
         do {
             let dateRange = selectedTimeRange.toDateRange()
             let response = try await APIService.shared.fetchDiaries(
+                page: 1,
+                pageSize: 20,
                 emotion: selectedEmotion,
                 topic: selectedTopic,
                 startDate: dateRange.start,
                 endDate: dateRange.end
             )
             let statsData = try await APIService.shared.fetchStats()
+
+            // 计算总页数
+            totalPages = (response.total + response.pageSize - 1) / response.pageSize
 
             var mergedDiaries: [Diary] = []
 
