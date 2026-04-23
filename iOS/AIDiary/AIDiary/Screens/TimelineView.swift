@@ -509,7 +509,7 @@ struct DiaryCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(diary.cleanedText ?? diary.rawText)
-                .font(.system(size: 15))
+                .font(.system(size: 15, design: .serif))
                 .foregroundColor(Color(hex: "1A1918"))
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)

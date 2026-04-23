@@ -167,9 +167,9 @@ struct DiaryPreviewView: View {
                 }
             } else {
                 Text(activeTab == .ai ? (diary.cleanedText ?? diary.rawText) : diary.rawText)
-                    .font(.system(size: 15))
+                    .font(.system(size: 16, design: .serif))
                     .foregroundColor(Color(hex: "1A1918"))
-                    .lineSpacing(11)
+                    .lineSpacing(8)
             }
             
             Text("共 \(diary.wordCount) 字")

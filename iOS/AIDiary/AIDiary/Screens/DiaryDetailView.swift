@@ -291,9 +291,9 @@ struct DiaryDetailView: View {
                 }
             } else {
                 Text(showOriginalText && displayDiary.cleanedText != nil ? displayDiary.rawText : (displayDiary.cleanedText ?? displayDiary.rawText))
-                    .font(.system(size: 15))
+                    .font(.system(size: 16, design: .serif))
                     .foregroundColor(Color(hex: "1A1918"))
-                    .lineSpacing(11)
+                    .lineSpacing(8)
             }
         }
         .padding(16)
