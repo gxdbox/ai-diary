@@ -1,12 +1,14 @@
 """
 日记相关API路由
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from typing import List
 from datetime import datetime
 import json
+import asyncio
+import importlib
 
 from app.db.database import get_db, Diary
 from app.models.diary import (
@@ -18,6 +20,32 @@ from app.services.text_cleaner import text_cleaner
 from app.services.vector_store import vector_store
 
 router = APIRouter()
+
+
+def _async_learn_from_diary(diary_id: int, diary_data: dict):
+    """
+    异步学习日记内容（后台任务）
+
+    安全隔离设计：
+    - 在后台线程执行，不阻塞主链路
+    - 错误只记录日志，不影响用户体验
+    - 使用动态导入避免循环导入问题
+    """
+    try:
+        # 动态导入避免循环导入
+        diary_assistant_module = importlib.import_module('app.services.diary_assistant')
+        database_module = importlib.import_module('app.db.database')
+
+        # 使用同步数据库连接（后台任务）
+        db = next(database_module.get_sync_db())
+        DiaryAssistantService = diary_assistant_module.DiaryAssistantService
+        assistant = DiaryAssistantService(db)
+        assistant.learn_from_diary(diary_id, diary_data)
+        db.close()
+
+    except Exception as e:
+        # 失败只记录日志，不影响用户
+        print(f"[Memory Learning Error] diary_id={diary_id}: {e}")
 
 
 @router.post("/clean", response_model=CleanTextResponse)
@@ -42,6 +70,7 @@ async def clean_text(request: CleanTextRequest):
 @router.post("/create", response_model=DiaryResponse)
 async def create_diary(
     request: DiaryCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -50,6 +79,7 @@ async def create_diary(
     2. AI分析情绪和主题
     3. 保存到数据库
     4. 添加到向量存储
+    5. [异步后台] 学习日记内容，更新记忆
     """
     try:
         # AI清洗文本
@@ -87,6 +117,16 @@ async def create_diary(
                 "created_at": diary.created_at.isoformat()
             }
         )
+
+        # [异步后台] 学习日记内容 - 不阻塞主链路
+        diary_data = {
+            "id": diary.id,
+            "cleaned_text": cleaned_text,
+            "emotion": analysis["emotion"].get("emotion"),
+            "topics": analysis["topics"],
+            "key_events": analysis["key_events"]
+        }
+        background_tasks.add_task(_async_learn_from_diary, diary.id, diary_data)
 
         return _diary_to_response(diary)
 

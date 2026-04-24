@@ -2,16 +2,20 @@
 数据库配置和初始化
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime
+from sqlalchemy.orm import declarative_base, Session
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, create_engine
 from datetime import datetime
 import os
 import json
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./ai_diary.db")
+SYNC_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ai_diary.db").replace("+aiosqlite", "")
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# 同步引擎（用于后台任务）
+sync_engine = create_engine(SYNC_DATABASE_URL, echo=False)
 
 Base = declarative_base()
 
@@ -56,9 +60,18 @@ async def init_db():
 
 
 async def get_db():
-    """获取数据库会话"""
+    """获取数据库会话（异步）"""
     async with async_session_maker() as session:
         try:
             yield session
         finally:
             await session.close()
+
+
+def get_sync_db():
+    """获取数据库会话（同步，用于后台任务）"""
+    session = Session(bind=sync_engine)
+    try:
+        yield session
+    finally:
+        session.close()
