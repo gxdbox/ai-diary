@@ -2,44 +2,108 @@
 日记助手 API 路由 - 基于 ProactAgent 论文思想
 
 提供智能日记辅助功能：
-1. 主动检索相关记忆
-2. 写作建议
-3. 相似历史日记
-4. 用户上下文
+1. AI 问答（整合三层记忆）
+2. 主动检索相关记忆
+3. 用户上下文
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Dict
+from sqlalchemy import select
+from typing import Dict, List
+import json
 
-from app.db.database import get_sync_db
+from app.db.database import get_sync_db, Diary
 from app.models.memory import (
-    DiaryAssistRequest, DiaryAssistResponse,
     RetrievalRequest, ProactiveRetrievalResponse
 )
 from app.services.diary_assistant import DiaryAssistantService
+from app.services.ai_service import ai_service
 
 router = APIRouter()
 
 
-@router.post("/assist", response_model=DiaryAssistResponse)
-async def assist_writing(
-    request: DiaryAssistRequest,
+@router.post("/ask")
+async def ask_question(
+    question: str = Query(..., description="用户问题"),
     db: Session = Depends(get_sync_db)
 ):
     """
-    智能辅助日记写作
+    AI 智能问答
 
-    ProactAgent 核心功能：
-    - 分析当前内容
-    - 主动检索相关记忆
-    - 提供个性化建议
+    整合 ProactAgent 三层记忆：
+    - 事实记忆：用户偏好、情绪模式
+    - 情节记忆：相关历史日记
+    - 行为技能：写作习惯
+
+    返回：AI 回答 + 相关日记列表
     """
     try:
         assistant = DiaryAssistantService(db)
-        response = assistant.assist_writing(request)
-        return response
+
+        # 1. 主动检索相关记忆
+        retrieval_response = assistant.retrieval_service.retrieve(
+            RetrievalRequest(
+                current_context=question,
+                max_results=5,
+                min_importance=0.3
+            )
+        )
+
+        # 2. 获取用户上下文（偏好、情绪模式）
+        user_context = assistant.get_user_context()
+
+        # 3. 构建上下文内容
+        context_parts = []
+        related_diaries = []
+
+        # 添加情节记忆（相关日记）
+        for result in retrieval_response.results[:3]:
+            if result.memory.memory_type.value == "episodic" and result.memory.source_diary_id:
+                diary_result = db.execute(
+                    select(Diary).where(Diary.id == result.memory.source_diary_id)
+                )
+                diary = diary_result.scalar_one_or_none()
+                if diary:
+                    context_parts.append(
+                        f"[{diary.created_at.strftime('%Y-%m-%d')}]\n{diary.cleaned_text[:300]}"
+                    )
+                    related_diaries.append({
+                        "id": diary.id,
+                        "text": diary.cleaned_text[:100] + "..." if len(diary.cleaned_text) > 100 else diary.cleaned_text,
+                        "date": diary.created_at.strftime('%Y-%m-%d'),
+                        "emotion": diary.emotion
+                    })
+
+        # 添加用户上下文信息
+        if user_context.get("common_topics"):
+            context_parts.append(
+                f"[用户偏好]\n常写主题：{', '.join(user_context['common_topics'][:5])}"
+            )
+
+        if user_context.get("emotion_distribution"):
+            top_emotions = sorted(
+                user_context["emotion_distribution"].items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:3]
+            context_parts.append(
+                f"[情绪模式]\n常见情绪：{', '.join([e[0] for e in top_emotions])}"
+            )
+
+        context = "\n\n---\n\n".join(context_parts) if context_parts else "暂无相关记忆"
+
+        # 4. 调用 AI 生成回答
+        answer = await ai_service.answer_question(question, context)
+
+        return {
+            "answer": answer,
+            "related_diaries": related_diaries,
+            "context_used": len(context_parts),
+            "retrieval_trigger": retrieval_response.retrieval_trigger
+        }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"辅助失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"问答失败: {str(e)}")
 
 
 @router.post("/retrieve", response_model=ProactiveRetrievalResponse)
@@ -125,7 +189,7 @@ async def get_all_memories(db: Session = Depends(get_sync_db)):
     """
     获取所有记忆
 
-    查看三种类型的记忆内容
+    查看两种类型的记忆内容
     """
     try:
         from app.services.memory_service import MemoryService
@@ -153,15 +217,6 @@ async def get_all_memories(db: Session = Depends(get_sync_db)):
                     "importance": m.importance_score
                 }
                 for m in memories.get(MemoryType.EPISODIC, [])[:20]
-            ],
-            "behavioral": [
-                {
-                    "id": m.id,
-                    "content": m.content,
-                    "keywords": m.keywords,
-                    "access_count": m.access_count
-                }
-                for m in memories.get(MemoryType.BEHAVIORAL, [])
             ]
         }
     except Exception as e:

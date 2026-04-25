@@ -145,10 +145,11 @@ struct AskResponse: Codable {
 struct RelatedDiary: Codable {
     let id: Int
     let text: String
-    let score: Double
+    let date: String?
+    let emotion: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, text, score
+        case id, text, date, emotion
     }
 }
 

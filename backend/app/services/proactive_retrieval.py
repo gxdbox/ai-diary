@@ -32,7 +32,6 @@ class ProactiveRetrievalService:
         self.RETRIEVAL_THRESHOLDS = {
             "keyword_match": 0.3,      # 关词匹配阈值
             "emotion_change": 0.5,     # 情绪变化阈值
-            "content_length": 50,      # 内容长度阈值（少于这个字数可能需要帮助）
             "similarity": 0.4          # 相似度阈值
         }
 
@@ -64,17 +63,9 @@ class ProactiveRetrievalService:
         if emotion_keywords:
             return True, f"情绪相关：{emotion_keywords[:3]}"
 
-        # 3. 检查内容长度（短内容可能需要帮助）
-        if len(current_context) < self.RETRIEVAL_THRESHOLDS["content_length"]:
-            # 检查是否是句子的开头（可能需要建议）
-            if current_context.strip().endswith("今天") or \
-               current_context.strip().endswith("刚才") or \
-               current_context.strip() in ["", "今天", "刚才", "刚刚"]:
-                return True, "内容刚开始，可能需要写作建议"
-
-        # 4. 检查是否有停滞迹象（重复词、停顿）
-        if self._detect_stagnation(current_context):
-            return True, "写作可能停滞，提供相关记忆帮助"
+        # 3. 有问题内容，需要检索相关记忆
+        if len(current_context) > 0:
+            return True, "用户提问，检索相关记忆"
 
         return False, None
 
@@ -140,30 +131,11 @@ class ProactiveRetrievalService:
                         retrieval_reason="你的写作偏好"
                     ))
 
-        # 3. 检索行为技能（写作模式）
-        if request.retrieval_type == MemoryType.BEHAVIORAL or request.retrieval_type is None:
-            skills = self.memory_service.get_behavioral_skills()
-            for skill in skills[:2]:
-                if skill.usage_count > 3:  # 只返回常用技能
-                    results.append(RetrievalResult(
-                        memory=MemoryItem(
-                            memory_type=MemoryType.BEHAVIORAL,
-                            content=skill.pattern_description,
-                            keywords=[skill.skill_type],
-                            importance_score=skill.success_rate
-                        ),
-                        relevance_score=skill.success_rate,
-                        retrieval_reason=f"写作技巧：{skill.skill_type}"
-                    ))
-
-        # 生成建议
-        suggestion = self._generate_suggestion(request.current_context, results)
-
         return ProactiveRetrievalResponse(
             should_retrieve=True,
             retrieval_trigger=trigger_reason,
             results=results[:request.max_results],
-            suggestion=suggestion
+            suggestion=None
         )
 
     def _find_trigger_keywords(self, text: str) -> List[str]:
@@ -227,48 +199,6 @@ class ProactiveRetrievalService:
 
         overlap = len(current_set & user_set)
         return overlap / max(len(current_set), 1)
-
-    def _detect_stagnation(self, text: str) -> bool:
-        """检测写作是否停滞"""
-        # 简化实现：检查是否有重复词或内容很短但有时间词
-        words = text.split()
-        if len(words) < 5:
-            return False
-
-        # 检查是否有3个以上重复词
-        word_counts = {}
-        for word in words:
-            word_counts[word] = word_counts.get(word, 0) + 1
-
-        repeated = sum(1 for w, c in word_counts.items() if c >= 2)
-        return repeated >= 3
-
-    def _generate_suggestion(self, current_text: str,
-                             results: List[RetrievalResult]) -> Optional[str]:
-        """根据检索结果生成写作建议"""
-        if not results:
-            return None
-
-        suggestions = []
-
-        # 1. 基于相似日记的建议
-        episodic_results = [r for r in results if r.memory.memory_type == MemoryType.EPISODIC]
-        if episodic_results:
-            similar_dates = [r.memory.source_diary_id for r in episodic_results[:2]]
-            suggestions.append(f"你之前写过类似的内容，可以参考")
-
-        # 2. 基于用户偏好的建议
-        factual_results = [r for r in results if r.memory.memory_type == MemoryType.FACTUAL]
-        if factual_results:
-            topics = factual_results[0].memory.keywords[:3]
-            suggestions.append(f"你常写的话题包括：{', '.join(topics)}")
-
-        # 3. 基于情绪的建议
-        emotion_keywords = self._find_emotion_keywords(current_text)
-        if emotion_keywords:
-            suggestions.append(f"检测到情绪关键词，可以深入描述你的感受")
-
-        return "；".join(suggestions) if suggestions else None
 
     def learn_from_feedback(self, retrieval_id: int, was_helpful: bool):
         """

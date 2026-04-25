@@ -1,10 +1,9 @@
 """
 结构化记忆模型 - 基于 ProactAgent 论文思想
 
-三种记忆类型：
+两种记忆类型：
 1. Factual Memory（事实记忆）：用户基本信息、偏好、习惯
 2. Episodic Memory（情节记忆）：历史日记内容、事件记录
-3. Behavioral Skills（行为技能）：写日记的模式、常用表达方式
 """
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -16,7 +15,6 @@ class MemoryType(str, Enum):
     """记忆类型枚举"""
     FACTUAL = "factual"      # 事实记忆：用户信息、偏好
     EPISODIC = "episodic"    # 情节记忆：历史日记、事件
-    BEHAVIORAL = "behavioral" # 行为技能：写作模式
 
 
 class MemoryItem(BaseModel):
@@ -58,15 +56,6 @@ class EpisodicMemory(BaseModel):
     retrieval_keys: List[str] = Field(default=[], description="检索关键词")
 
 
-class BehavioralSkill(BaseModel):
-    """行为技能 - 写作模式"""
-    skill_type: str = Field(..., description="技能类型")
-    pattern_description: str = Field(..., description="模式描述")
-    examples: List[str] = Field(default=[], description="示例")
-    usage_count: int = Field(default=0, description="使用次数")
-    success_rate: float = Field(default=0.5, description="成功率")
-
-
 class RetrievalRequest(BaseModel):
     """主动检索请求"""
     current_context: str = Field(..., description="当前上下文（正在写的内容）")
@@ -88,18 +77,3 @@ class ProactiveRetrievalResponse(BaseModel):
     retrieval_trigger: Optional[str] = Field(None, description="检索触发原因")
     results: List[RetrievalResult] = Field(default=[], description="检索结果")
     suggestion: Optional[str] = Field(None, description="AI给出的建议")
-
-
-class DiaryAssistRequest(BaseModel):
-    """日记助手请求"""
-    current_text: str = Field(..., description="当前正在写的日记内容")
-    partial: bool = Field(default=True, description="是否是部分内容（还在写）")
-
-
-class DiaryAssistResponse(BaseModel):
-    """日记助手响应"""
-    relevant_memories: List[RetrievalResult] = Field(default=[], description="相关记忆")
-    suggestions: List[str] = Field(default=[], description="写作建议")
-    similar_past_diaries: List[EpisodicMemory] = Field(default=[], description="相似的历史日记")
-    emotion_prediction: Optional[str] = Field(None, description="情绪预测")
-    topic_suggestions: List[str] = Field(default=[], description="主题建议")

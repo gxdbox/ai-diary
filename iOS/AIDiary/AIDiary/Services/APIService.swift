@@ -124,7 +124,7 @@ class APIService {
     }
     
     func askQuestion(question: String) async throws -> AskResponse {
-        let urlString = "\(baseURL)/api/search/ask?question=\(question.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+        let urlString = "\(baseURL)/api/assistant/ask?question=\(question.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
         guard let url = URL(string: urlString) else {
             throw URLError(.badURL)
         }

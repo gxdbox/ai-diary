@@ -1,10 +1,9 @@
 """
 记忆服务 - 基于 ProactAgent 论文思想
 
-管理三种结构化记忆：
+管理两种结构化记忆：
 1. Factual Memory（事实记忆）
 2. Episodic Memory（情节记忆）
-3. Behavioral Skills（行为技能）
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -14,7 +13,7 @@ from sqlalchemy import text
 
 from app.models.memory import (
     MemoryType, MemoryItem, FactualMemory,
-    EpisodicMemory, BehavioralSkill
+    EpisodicMemory
 )
 
 
@@ -206,66 +205,6 @@ class MemoryService:
 
         return episodic_list
 
-    # ==================== 行为技能 ====================
-
-    def get_behavioral_skills(self) -> List[BehavioralSkill]:
-        """获取行为技能（写作模式）"""
-        memories = self._get_memories_by_type(MemoryType.BEHAVIORAL)
-
-        skills = []
-        for m in memories:
-            metadata = json.loads(m["metadata"]) if m["metadata"] else {}
-            skills.append(BehavioralSkill(
-                skill_type=metadata.get("skill_type", "general"),
-                pattern_description=m["content"],
-                examples=metadata.get("examples", []),
-                usage_count=m["access_count"],
-                success_rate=metadata.get("success_rate", 0.5)
-            ))
-
-        return skills
-
-    def update_behavioral_skill(self, skill_type: str, pattern: str,
-                                example: Optional[str] = None):
-        """更新行为技能"""
-        existing = self._find_skill_by_type(skill_type)
-
-        if existing:
-            metadata = json.loads(existing["metadata"]) if existing["metadata"] else {}
-            if example and example not in metadata.get("examples", []):
-                metadata.setdefault("examples", []).append(example)
-            metadata["usage_count"] = existing["access_count"] + 1
-
-            self.db.execute(text("""
-                UPDATE memories
-                SET metadata = :metadata, access_count = access_count + 1, updated_at = CURRENT_TIMESTAMP
-                WHERE id = :id
-            """), {"metadata": json.dumps(metadata), "id": existing["id"]})
-        else:
-            self.db.execute(text("""
-                INSERT INTO memories (memory_type, content, keywords, metadata, importance_score)
-                VALUES ('behavioral', :pattern, '[]', :metadata, 0.4)
-            """), {
-                "pattern": pattern,
-                "metadata": json.dumps({
-                    "skill_type": skill_type,
-                    "examples": [example] if example else [],
-                    "success_rate": 0.5
-                })
-            })
-
-        self.db.commit()
-
-    def _find_skill_by_type(self, skill_type: str) -> Optional[Dict]:
-        """查找特定类型的行为技能"""
-        result = self.db.execute(text("""
-            SELECT * FROM memories
-            WHERE memory_type = 'behavioral' AND metadata LIKE :pattern
-            LIMIT 1
-        """), {"pattern": f'%skill_type": "{skill_type}%'})
-        row = result.fetchone()
-        return dict(row) if row else None
-
     # ==================== 通用方法 ====================
 
     def _get_memories_by_type(self, memory_type: MemoryType, limit: int = 100) -> List[Dict]:
@@ -284,7 +223,7 @@ class MemoryService:
     def get_all_memories(self) -> Dict[MemoryType, List[MemoryItem]]:
         """获取所有记忆，按类型分组"""
         result = {}
-        for mt in MemoryType:
+        for mt in [MemoryType.FACTUAL, MemoryType.EPISODIC]:
             memories = self._get_memories_by_type(mt)
             result[mt] = [
                 MemoryItem(
