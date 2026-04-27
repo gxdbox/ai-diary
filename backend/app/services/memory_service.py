@@ -137,6 +137,7 @@ class MemoryService:
             metadata = json.loads(m["metadata"]) if m["metadata"] else {}
             keywords = json.loads(m["keywords"]) if m["keywords"] else []
             episodic_list.append(EpisodicMemory(
+                memory_id=m["id"],
                 diary_id=m["source_diary_id"] or 0,
                 summary=m["content"],
                 key_events=metadata.get("key_events", []),
@@ -175,25 +176,32 @@ class MemoryService:
     def find_similar_episodic(self, keywords: List[str], limit: int = 5) -> List[EpisodicMemory]:
         """查找相似的情节记忆"""
         if not keywords:
-            return []
+            # 如果关键词为空，返回最新的几条记忆
+            result = self.db.execute(text("""
+                SELECT * FROM memories
+                WHERE memory_type = 'episodic'
+                ORDER BY created_at DESC
+                LIMIT :limit
+            """), {"limit": limit})
+        else:
+            # 使用关键词匹配（同时搜索 keywords 和 content）
+            keyword_pattern = "%" + keywords[0] + "%"
 
-        # 使用关键词匹配
-        keyword_pattern = "%" + "%".join(keywords[:3]) + "%"
-
-        result = self.db.execute(text("""
-            SELECT * FROM memories
-            WHERE memory_type = 'episodic'
-            AND (keywords LIKE :pattern OR metadata LIKE :pattern)
-            ORDER BY importance_score DESC, access_count DESC
-            LIMIT :limit
-        """), {"pattern": keyword_pattern, "limit": limit})
+            result = self.db.execute(text("""
+                SELECT * FROM memories
+                WHERE memory_type = 'episodic'
+                AND (keywords LIKE :pattern OR content LIKE :pattern)
+                ORDER BY importance_score DESC, created_at DESC
+                LIMIT :limit
+            """), {"pattern": keyword_pattern, "limit": limit})
 
         rows = result.fetchall()
         episodic_list = []
         for row in rows:
-            m = dict(row)
+            m = dict(row._mapping) if hasattr(row, '_mapping') else dict(zip(row._fields, row))
             metadata = json.loads(m["metadata"]) if m["metadata"] else {}
             episodic_list.append(EpisodicMemory(
+                memory_id=m["id"],
                 diary_id=m["source_diary_id"] or 0,
                 summary=m["content"],
                 key_events=metadata.get("key_events", []),

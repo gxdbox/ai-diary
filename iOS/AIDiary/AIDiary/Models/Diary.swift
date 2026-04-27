@@ -135,10 +135,12 @@ struct EmotionTrendResponse: Codable {
 struct AskResponse: Codable {
     let answer: String
     let relatedDiaries: [RelatedDiary]?
-    
+    let memoryIds: [Int]?
+
     enum CodingKeys: String, CodingKey {
         case answer
         case relatedDiaries = "related_diaries"
+        case memoryIds = "memory_ids"
     }
 }
 

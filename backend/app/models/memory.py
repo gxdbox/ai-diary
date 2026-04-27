@@ -45,6 +45,7 @@ class FactualMemory(BaseModel):
 
 class EpisodicMemory(BaseModel):
     """情节记忆 - 历史日记摘要"""
+    memory_id: Optional[int] = Field(None, description="记忆ID（用于反馈）")
     diary_id: int = Field(..., description="日记ID")
     summary: str = Field(..., description="日记摘要")
     key_events: List[str] = Field(default=[], description="关键事件")

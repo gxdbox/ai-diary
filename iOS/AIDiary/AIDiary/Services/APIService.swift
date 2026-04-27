@@ -138,6 +138,28 @@ class APIService {
         return try decode(data)
     }
 
+    func sendFeedback(memoryIds: [Int], wasHelpful: Bool) async throws {
+        let urlString = "\(baseURL)/api/assistant/feedback"
+        guard let url = URL(string: urlString) else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "memory_ids": memoryIds,
+            "was_helpful": wasHelpful
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
     // ============ 词典相关 API ============
 
     func fetchDictionary() async throws -> DictionaryListResponse {

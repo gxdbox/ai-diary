@@ -6,10 +6,10 @@
 2. 主动检索相关记忆
 3. 用户上下文
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-from typing import Dict, List
+from typing import Dict, List, Optional
 import json
 
 from app.db.database import get_sync_db, Diary
@@ -95,9 +95,13 @@ async def ask_question(
         # 4. 调用 AI 生成回答
         answer = await ai_service.answer_question(question, context)
 
+        # 收集检索到的 memory_ids 用于反馈
+        memory_ids = [r.memory.id for r in retrieval_response.results if r.memory.id]
+
         return {
             "answer": answer,
             "related_diaries": related_diaries,
+            "memory_ids": memory_ids,
             "context_used": len(context_parts),
             "retrieval_trigger": retrieval_response.retrieval_trigger
         }
@@ -158,6 +162,35 @@ async def learn_from_diary(
         return {"success": True, "message": "学习完成"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"学习失败: {str(e)}")
+
+
+@router.post("/feedback")
+async def record_session_feedback(
+    memory_ids: List[int] = Body(..., embed=True),
+    was_helpful: bool = Body(..., embed=True),
+    db: Session = Depends(get_sync_db)
+):
+    """
+    记录反馈并学习（简化版）
+
+    用户对整个回答反馈是否有帮助
+    根据反馈批量调整所有检索到的记忆的重要性
+    """
+    try:
+        assistant = DiaryAssistantService(db)
+
+        delta = 0.15 if was_helpful else -0.1
+
+        for memory_id in memory_ids:
+            assistant.memory_service.update_importance(memory_id, delta=delta)
+
+        return {
+            "success": True,
+            "message": f"反馈已记录：{'有帮助' if was_helpful else '无帮助'}",
+            "updated_count": len(memory_ids)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"记录反馈失败: {str(e)}")
 
 
 @router.post("/feedback/{diary_id}")

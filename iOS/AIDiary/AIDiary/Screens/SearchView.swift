@@ -6,7 +6,9 @@ struct SearchView: View {
     @State private var results: [SearchResult] = []
     @State private var showAIAnswer = false
     @State private var aiAnswer = ""
-    
+    @State private var currentMemoryIds: [Int] = []
+    @State private var feedbackGiven: Bool? = nil  // nil = 未反馈, true = 有帮助, false = 无帮助
+
     var body: some View {
         VStack(spacing: 0) {
             statusBarPlaceholder
@@ -87,7 +89,7 @@ struct SearchView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(Color(hex: "1A1918"))
                     }
-                    
+
                     Text(aiAnswer)
                         .font(.system(size: 15))
                         .foregroundColor(Color(hex: "1A1918"))
@@ -98,11 +100,70 @@ struct SearchView: View {
                 .background(Color.white)
                 .cornerRadius(16)
                 .shadow(color: Color.black.opacity(0.08), radius: 12, y: 2)
-                
+
+                // 反馈按钮
+                if !currentMemoryIds.isEmpty && feedbackGiven == nil {
+                    VStack(spacing: 8) {
+                        Text("这个回答对你有帮助吗？")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(hex: "6D6C6A"))
+
+                        HStack(spacing: 12) {
+                            Button {
+                                sendFeedback(wasHelpful: true)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "hand.thumbsup.fill")
+                                        .font(.system(size: 14))
+                                    Text("有帮助")
+                                        .font(.system(size: 14))
+                                }
+                                .foregroundColor(Color(hex: "3D8A5A"))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color(hex: "C8F0D8"))
+                                .cornerRadius(12)
+                            }
+
+                            Button {
+                                sendFeedback(wasHelpful: false)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "hand.thumbsdown.fill")
+                                        .font(.system(size: 14))
+                                    Text("没帮助")
+                                        .font(.system(size: 14))
+                                }
+                                .foregroundColor(Color(hex: "D08068"))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color(hex: "F8E0D8"))
+                                .cornerRadius(12)
+                            }
+                        }
+                    }
+                    .padding(.top, 8)
+                }
+
+                // 反馈结果提示
+                if let feedback = feedbackGiven {
+                    HStack(spacing: 8) {
+                        Image(systemName: feedback ? "checkmark.circle.fill" : "info.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(feedback ? Color(hex: "3D8A5A") : Color(hex: "D08068"))
+                        Text(feedback ? "感谢反馈，我会继续改进！" : "收到，下次我会尝试更好的回答")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(hex: "6D6C6A"))
+                    }
+                    .padding(.top, 8)
+                }
+
                 Button {
                     aiAnswer = ""
                     results = []
                     query = ""
+                    currentMemoryIds = []
+                    feedbackGiven = nil
                 } label: {
                     Text("再问一次")
                         .font(.system(size: 14))
@@ -166,17 +227,37 @@ struct SearchView: View {
         guard !query.isEmpty else { return }
         isSearching = true
         aiAnswer = ""
+        currentMemoryIds = []
+        feedbackGiven = nil
         Task {
             do {
                 let response = try await APIService.shared.askQuestion(question: query)
                 await MainActor.run {
                     aiAnswer = response.answer
+                    currentMemoryIds = response.memoryIds ?? []
                     isSearching = false
                 }
             } catch {
                 await MainActor.run {
                     aiAnswer = "抱歉，AI 思考时遇到了问题。请稍后再试。"
                     isSearching = false
+                }
+            }
+        }
+    }
+
+    private func sendFeedback(wasHelpful: Bool) {
+        guard !currentMemoryIds.isEmpty else { return }
+        Task {
+            do {
+                try await APIService.shared.sendFeedback(memoryIds: currentMemoryIds, wasHelpful: wasHelpful)
+                await MainActor.run {
+                    feedbackGiven = wasHelpful
+                }
+            } catch {
+                // 反馈失败不影响用户体验，静默处理
+                await MainActor.run {
+                    feedbackGiven = wasHelpful
                 }
             }
         }

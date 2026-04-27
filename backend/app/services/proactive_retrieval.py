@@ -104,6 +104,7 @@ class ProactiveRetrievalService:
             if relevance >= request.min_importance:
                 results.append(RetrievalResult(
                     memory=MemoryItem(
+                        id=episode.memory_id,
                         memory_type=MemoryType.EPISODIC,
                         content=episode.summary,
                         keywords=episode.retrieval_keys,
@@ -155,25 +156,22 @@ class ProactiveRetrievalService:
 
     def _extract_keywords(self, text: str) -> List[str]:
         """从文本提取关键词"""
-        # 简化实现：提取中文词汇
         keywords = []
 
-        # 1. 匹配触发关键词
+        # 1. 匹配触发关键词（最重要）
         for category, kws in self.TRIGGER_KEYWORDS.items():
             for kw in kws:
                 if kw in text:
                     keywords.append(kw)
 
-        # 2. 提取人名、地名等（简化）
-        # 匹配"和XX"、"去XX"等模式
-        patterns = [
-            r"和[^\s]{2,3}",
-            r"去[^\s]{2,3}",
-            r"在[^\s]{2,3}",
-        ]
-        for pattern in patterns:
-            matches = re.findall(pattern, text)
-            keywords.extend(matches[:3])
+        # 2. 如果关键词为空，提取问题中的核心词
+        if not keywords:
+            # 常见名词词汇
+            common_words = ["朋友", "同事", "项目", "学习", "运动", "读书", "电影",
+                           "音乐", "游戏", "购物", "约会", "聚会", "会议", "考试"]
+            for word in common_words:
+                if word in text:
+                    keywords.append(word)
 
         return keywords[:10]
 
