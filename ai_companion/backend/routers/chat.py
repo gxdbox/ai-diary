@@ -1,5 +1,6 @@
 # AI伴侣 - 聊天 API
 
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
