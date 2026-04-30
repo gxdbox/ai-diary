@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI伴侣 - 测试页面</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; }
+
+        .container { max-width: 800px; margin: 20px auto; padding: 20px; }
+
+        h1 { color: #333; margin-bottom: 20px; }
+
+        /* 日记列表 */
+        .diary-list { background: white; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+        .diary-item { padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; }
+        .diary-item:hover { background: #f0f0f0; }
+        .diary-item:last-child { border-bottom: none; }
+        .diary-emotion { color: #666; font-size: 12px; margin-top: 4px; }
+        .diary-text { color: #333; font-size: 14px; line-height: 1.5; }
+
+        /* AI回应区域 */
+        .response-area { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .response-area h3 { color: #333; margin-bottom: 15px; }
+        .ai-response { background: #e8f5e9; border-radius: 8px; padding: 15px; line-height: 1.6; }
+
+        /* 聊天区域 */
+        .chat-area { background: white; border-radius: 8px; padding: 20px; }
+        .chat-area h3 { color: #333; margin-bottom: 15px; }
+        .chat-input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; resize: none; }
+        .chat-btn { margin-top: 10px; padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        .chat-btn:hover { background: #45a049; }
+        .chat-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+        /* 加载状态 */
+        .loading { color: #999; text-align: center; padding: 20px; }
+
+        /* 情绪标签 */
+        .emotion-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 8px; }
+        .emotion-矛盾 { background: #fff3e0; color: #e65100; }
+        .emotion-困惑 { background: #e3f2fd; color: #1565c0; }
+        .emotion-恐惧 { background: #fce4ec; color: #c62828; }
+        .emotion-自豪 { background: #e8f5e9; color: #2e7d32; }
+        .emotion-不满 { background: #ffebee; color: #c62828; }
+        .emotion-如释重负 { background: #f3e5f5; color: #7b1fa2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 AI伴侣测试</h1>
+
+        <!-- 日记列表 -->
+        <div class="diary-list">
+            <h3>📝 日记列表 (点击测试AI回应)</h3>
+            <div id="diaries-container">
+                <div class="loading">加载中...</div>
+            </div>
+        </div>
+
+        <!-- AI回应展示 -->
+        <div class="response-area" id="response-area" style="display: none;">
+            <h3>💬 AI回应</h3>
+            <div class="diary-text" id="selected-diary-text"></div>
+            <div style="margin-top: 15px;">
+                <span class="emotion-tag" id="selected-diary-emotion"></span>
+            </div>
+            <div class="ai-response" id="ai-response-text" style="margin-top: 15px;">
+                <div class="loading">AI正在思考...</div>
+            </div>
+        </div>
+
+        <!-- 自由聊天 -->
+        <div class="chat-area">
+            <h3>💭 自由聊天</h3>
+            <textarea class="chat-input" id="chat-input" rows="3" placeholder="输入你想说的话..."></textarea>
+            <button class="chat-btn" id="chat-btn" onclick="sendChat()">发送</button>
+            <div class="ai-response" id="chat-response" style="margin-top: 15px; display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8001/api';
+
+        // 加载日记列表
+        async function loadDiaries() {
+            try {
+                const response = await fetch(`${API_BASE}/diaries?limit=20`);
+                const data = await response.json();
+
+                const container = document.getElementById('diaries-container');
+                container.innerHTML = '';
+
+                data.diaries.forEach(diary => {
+                    const item = document.createElement('div');
+                    item.className = 'diary-item';
+                    item.onclick = () => respondToDiary(diary.id);
+
+                    const emotionClass = `emotion-${diary.emotion || '未知'}`;
+                    item.innerHTML = `
+                        <div class="diary-text">${diary.text.substring(0, 100)}...</div>
+                        <div class="diary-emotion">
+                            <span class="emotion-tag ${emotionClass}">${diary.emotion || '未知'}</span>
+                            <span>${diary.created_at}</span>
+                        </div>
+                    `;
+
+                    container.appendChild(item);
+                });
+            } catch (error) {
+                document.getElementById('diaries-container').innerHTML =
+                    '<div class="loading" style="color: red;">加载失败，请确保后端服务已启动 (python run.py)</div>';
+            }
+        }
+
+        // AI对日记回应
+        async function respondToDiary(diaryId) {
+            const responseArea = document.getElementById('response-area');
+            responseArea.style.display = 'block';
+
+            document.getElementById('ai-response-text').innerHTML = '<div class="loading">AI正在思考...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/diary/respond`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ diary_id: diaryId })
+                });
+
+                const data = await response.json();
+
+                document.getElementById('selected-diary-text').textContent = data.diary_text;
+
+                const emotionTag = document.getElementById('selected-diary-emotion');
+                emotionTag.className = `emotion-tag emotion-${data.diary_emotion}`;
+                emotionTag.textContent = data.diary_emotion;
+
+                document.getElementById('ai-response-text').textContent = data.ai_response;
+            } catch (error) {
+                document.getElementById('ai-response-text').innerHTML =
+                    '<div style="color: red;">请求失败，请检查后端服务</div>';
+            }
+        }
+
+        // 自由聊天
+        async function sendChat() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            const btn = document.getElementById('chat-btn');
+            btn.disabled = true;
+            btn.textContent = '发送中...';
+
+            const chatResponse = document.getElementById('chat-response');
+            chatResponse.style.display = 'block';
+            chatResponse.innerHTML = '<div class="loading">AI正在思考...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+
+                const data = await response.json();
+                chatResponse.textContent = data.response;
+
+                input.value = '';
+            } catch (error) {
+                chatResponse.innerHTML = '<div style="color: red;">请求失败</div>';
+            }
+
+            btn.disabled = false;
+            btn.textContent = '发送';
+        }
+
+        // 页面加载时获取日记
+        loadDiaries();
+    </script>
+</body>
+</html>
