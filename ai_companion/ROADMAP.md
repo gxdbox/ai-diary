@@ -24,6 +24,7 @@
 | FastAPI框架 | ✅ 完成 | backend/app.py |
 | DeepSeek API集成 | ✅ 完成 | llm_core.py |
 | 生成参数优化 | ✅ 完成 | temperature=0.7, top_p=0.9 (情感聊天推荐) |
+| System Prompt优化 | ✅ 完成 | 角色+任务+约束结构，简洁温暖 |
 | 安全过滤 | ✅ 完成 | 敏感词 + 危机干预 |
 | 聊天API | ✅ 完成 | POST /api/chat |
 | 日记同步 | ✅ 完成 | 40条日记数据 |
