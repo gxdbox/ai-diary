@@ -3,14 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI伴侣 - 测试页面</title>
+    <title>AI伴侣 - 测试页面 v1.0</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; }
 
-        .container { max-width: 800px; margin: 20px auto; padding: 20px; }
+        .container { max-width: 900px; margin: 20px auto; padding: 20px; }
 
-        h1 { color: #333; margin-bottom: 20px; }
+        h1 { color: #333; margin-bottom: 10px; }
+        .version { color: #666; font-size: 12px; margin-bottom: 20px; }
+
+        /* 功能卡片 */
+        .feature-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
+        .feature-card { background: white; border-radius: 8px; padding: 15px; }
+        .feature-card h3 { color: #4CAF50; margin-bottom: 10px; font-size: 14px; }
+        .feature-card p { color: #666; font-size: 12px; line-height: 1.5; }
 
         /* 日记列表 */
         .diary-list { background: white; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
@@ -24,14 +31,34 @@
         .response-area { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
         .response-area h3 { color: #333; margin-bottom: 15px; }
         .ai-response { background: #e8f5e9; border-radius: 8px; padding: 15px; line-height: 1.6; }
+        .response-meta { color: #666; font-size: 12px; margin-top: 10px; }
+
+        /* 反馈按钮 */
+        .feedback-buttons { margin-top: 15px; display: flex; gap: 10px; }
+        .feedback-btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        .feedback-btn.good { background: #e8f5e9; color: #2e7d32; }
+        .feedback-btn.normal { background: #fff3e0; color: #e65100; }
+        .feedback-btn.bad { background: #ffebee; color: #c62828; }
+        .feedback-btn:hover { opacity: 0.8; }
 
         /* 聊天区域 */
-        .chat-area { background: white; border-radius: 8px; padding: 20px; }
+        .chat-area { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
         .chat-area h3 { color: #333; margin-bottom: 15px; }
+        .chat-history { max-height: 300px; overflow-y: auto; margin-bottom: 15px; }
+        .chat-message { padding: 10px; margin: 5px 0; border-radius: 8px; }
+        .chat-message.user { background: #e3f2fd; margin-left: 20%; }
+        .chat-message.ai { background: #e8f5e9; margin-right: 20%; }
         .chat-input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; resize: none; }
         .chat-btn { margin-top: 10px; padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; }
         .chat-btn:hover { background: #45a049; }
         .chat-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+        /* 统计区域 */
+        .stats-area { background: white; border-radius: 8px; padding: 20px; }
+        .stats-area h3 { color: #333; margin-bottom: 15px; }
+        .stat-item { display: inline-block; padding: 10px 20px; background: #f5f5f5; border-radius: 6px; margin: 5px; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #4CAF50; }
+        .stat-label { font-size: 12px; color: #666; }
 
         /* 加载状态 */
         .loading { color: #999; text-align: center; padding: 20px; }
@@ -43,12 +70,35 @@
         .emotion-恐惧 { background: #fce4ec; color: #c62828; }
         .emotion-自豪 { background: #e8f5e9; color: #2e7d32; }
         .emotion-不满 { background: #ffebee; color: #c62828; }
-        .emotion-如释重负 { background: #f3e5f5; color: #7b1fa2; }
+        .emotion-焦虑 { background: #f3e5f5; color: #7b1fa2; }
+        .emotion-悲伤 { background: #e0e0e0; color: #424242; }
+        .emotion-孤独 { background: #e1f5fe; color: #0277bd; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🤖 AI伴侣测试</h1>
+        <div class="version">v1.0 | 对话记忆 ✓ 情绪匹配 ✓ 用户反馈 ✓</div>
+
+        <!-- 功能说明 -->
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h3>对话记忆</h3>
+                <p>AI会记住最近5轮对话，实现连贯的多轮交流。</p>
+            </div>
+            <div class="feature-card">
+                <h3>情绪匹配</h3>
+                <p>根据日记的情绪标签，自动调整回应风格。</p>
+            </div>
+            <div class="feature-card">
+                <h3>用户反馈</h3>
+                <p>可以对AI回应评分，帮助持续优化。</p>
+            </div>
+            <div class="feature-card">
+                <h3>Prompt版本管理</h3>
+                <p>Prompt独立存储，易于迭代优化。</p>
+            </div>
+        </div>
 
         <!-- 日记列表 -->
         <div class="diary-list">
@@ -68,19 +118,34 @@
             <div class="ai-response" id="ai-response-text" style="margin-top: 15px;">
                 <div class="loading">AI正在思考...</div>
             </div>
+            <div class="response-meta" id="response-meta"></div>
+            <div class="feedback-buttons" id="feedback-buttons" style="display: none;">
+                <button class="feedback-btn good" onclick="submitFeedback(5, '好')">😊 很好</button>
+                <button class="feedback-btn normal" onclick="submitFeedback(3, '一般')">😐 一般</button>
+                <button class="feedback-btn bad" onclick="submitFeedback(1, '不好')">😕 不好</button>
+            </div>
         </div>
 
         <!-- 自由聊天 -->
         <div class="chat-area">
-            <h3>💭 自由聊天</h3>
+            <h3>💭 自由聊天 (带记忆)</h3>
+            <div class="chat-history" id="chat-history"></div>
             <textarea class="chat-input" id="chat-input" rows="3" placeholder="输入你想说的话..."></textarea>
             <button class="chat-btn" id="chat-btn" onclick="sendChat()">发送</button>
-            <div class="ai-response" id="chat-response" style="margin-top: 15px; display: none;"></div>
+        </div>
+
+        <!-- 反馈统计 -->
+        <div class="stats-area">
+            <h3>📊 反馈统计</h3>
+            <div id="stats-container">
+                <div class="loading">加载中...</div>
+            </div>
         </div>
     </div>
 
     <script>
         const API_BASE = 'http://localhost:8001/api';
+        let currentConversationId = null;
 
         // 加载日记列表
         async function loadDiaries() {
@@ -119,6 +184,8 @@
             responseArea.style.display = 'block';
 
             document.getElementById('ai-response-text').innerHTML = '<div class="loading">AI正在思考...</div>';
+            document.getElementById('feedback-buttons').style.display = 'none';
+            document.getElementById('response-meta').innerHTML = '';
 
             try {
                 const response = await fetch(`${API_BASE}/diary/respond`, {
@@ -136,9 +203,47 @@
                 emotionTag.textContent = data.diary_emotion;
 
                 document.getElementById('ai-response-text').textContent = data.ai_response;
+
+                // 显示元数据
+                if (data.prompt_version) {
+                    document.getElementById('response-meta').innerHTML =
+                        `Prompt版本: ${data.prompt_version} | 会话ID: ${data.conversation_id}`;
+                }
+
+                currentConversationId = data.conversation_id;
+                document.getElementById('feedback-buttons').style.display = 'flex';
+
             } catch (error) {
                 document.getElementById('ai-response-text').innerHTML =
                     '<div style="color: red;">请求失败，请检查后端服务</div>';
+            }
+        }
+
+        // 提交反馈
+        async function submitFeedback(rating, type) {
+            if (!currentConversationId) {
+                alert('请先进行对话');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/feedback`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        conversation_id: currentConversationId,
+                        rating: rating,
+                        feedback_type: type
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    alert('感谢您的反馈！😊');
+                    loadFeedbackStats();
+                }
+            } catch (error) {
+                alert('反馈提交失败');
             }
         }
 
@@ -153,9 +258,9 @@
             btn.disabled = true;
             btn.textContent = '发送中...';
 
-            const chatResponse = document.getElementById('chat-response');
-            chatResponse.style.display = 'block';
-            chatResponse.innerHTML = '<div class="loading">AI正在思考...</div>';
+            // 显示用户消息
+            const history = document.getElementById('chat-history');
+            history.innerHTML += `<div class="chat-message user">${message}</div>`;
 
             try {
                 const response = await fetch(`${API_BASE}/chat`, {
@@ -165,19 +270,50 @@
                 });
 
                 const data = await response.json();
-                chatResponse.textContent = data.response;
 
+                // 显示AI回复
+                history.innerHTML += `<div class="chat-message ai">${data.response}</div>`;
+
+                currentConversationId = data.conversation_id;
                 input.value = '';
+
+                // 滚动到最新
+                history.scrollTop = history.scrollHeight;
+
             } catch (error) {
-                chatResponse.innerHTML = '<div style="color: red;">请求失败</div>';
+                history.innerHTML += `<div class="chat-message ai" style="color: red;">请求失败</div>`;
             }
 
             btn.disabled = false;
             btn.textContent = '发送';
         }
 
-        // 页面加载时获取日记
+        // 加载反馈统计
+        async function loadFeedbackStats() {
+            try {
+                const response = await fetch(`${API_BASE}/feedback/stats`);
+                const data = await response.json();
+
+                const container = document.getElementById('stats-container');
+                container.innerHTML = `
+                    <div class="stat-item">
+                        <div class="stat-value">${data.average_rating || 0}</div>
+                        <div class="stat-label">平均评分</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${data.total_feedbacks || 0}</div>
+                        <div class="stat-label">反馈数量</div>
+                    </div>
+                `;
+            } catch (error) {
+                document.getElementById('stats-container').innerHTML =
+                    '<div style="color: #666;">暂无反馈数据</div>';
+            }
+        }
+
+        // 页面加载时获取数据
         loadDiaries();
+        loadFeedbackStats();
     </script>
 </body>
 </html>
