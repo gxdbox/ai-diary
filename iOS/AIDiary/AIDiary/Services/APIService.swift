@@ -71,6 +71,12 @@ class APIService {
         let response: InsightsResponse = try decode(data)
         return response.insights
     }
+
+    func fetchDeepInsights(days: Int = 90) async throws -> DeepInsightResponse {
+        let url = URL(string: "\(baseURL)/api/analysis/deep-insights?days=\(days)")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try decode(data)
+    }
     
     func createDiary(rawText: String, recordingDuration: Int? = nil) async throws -> Diary {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/create")!)

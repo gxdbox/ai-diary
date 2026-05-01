@@ -10,8 +10,10 @@ import json
 
 from app.db.database import get_db, Diary
 from app.models.diary import AnalyzeRequest, AnalyzeResponse, EmotionResult
+from app.models.insight import DeepInsightResponse
 from app.services.ai_service import ai_service
 from app.services.analyzer import analyzer
+from app.services.insight_analyzer import insight_analyzer
 
 router = APIRouter()
 
@@ -256,6 +258,58 @@ async def get_insights(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取洞察失败: {str(e)}")
+
+
+@router.get("/deep-insights", response_model=DeepInsightResponse)
+async def get_deep_insights(
+    days: int = Query(90, ge=7, le=365, description="分析周期天数"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取深度洞察
+
+    返回四大分类的深度洞察：
+    - 自我认知：天赋、写作人格、价值观
+    - 生活状态：情绪健康、生活平衡、人际关系
+    - 风险预警：危机信号、方向偏差、能量黑洞
+    - 成长激励：积极变化、希望方向、盲点提示
+
+    分析原理：从日记数据中提取模式，帮助用户真正认识自己
+    """
+    try:
+        start_date = datetime.utcnow() - timedelta(days=days)
+
+        result = await db.execute(
+            select(Diary)
+            .where(Diary.created_at >= start_date)
+            .order_by(desc(Diary.created_at))
+            .limit(200)  # 最多分析200篇
+        )
+        diaries = result.scalars().all()
+
+        if not diaries:
+            return insight_analyzer._empty_response(days)
+
+        # 转换为分析服务需要的格式
+        diary_data = []
+        for d in diaries:
+            diary_data.append({
+                "id": d.id,
+                "created_at": d.created_at,
+                "emotion": d.emotion,
+                "emotion_score": d.emotion_score,
+                "topics": json.loads(d.topics) if d.topics else [],
+                "cleaned_text": d.cleaned_text,
+                "raw_text": d.raw_text
+            })
+
+        # 执行深度分析
+        insights = insight_analyzer.analyze(diary_data, days)
+
+        return insights
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取深度洞察失败: {str(e)}")
 
 
 async def _calculate_streak(db: AsyncSession) -> int:

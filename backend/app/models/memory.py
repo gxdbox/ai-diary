@@ -42,6 +42,16 @@ class FactualMemory(BaseModel):
     writing_habits: Dict[str, Any] = Field(default={}, description="写作习惯")
     last_updated: datetime = Field(default_factory=datetime.now)
 
+    # 深度洞察字段
+    talents: Dict[str, Any] = Field(default={}, description="天赋识别")
+    crisis_signals: Dict[str, Any] = Field(default={}, description="危机信号")
+    direction偏差: Dict[str, Any] = Field(default={}, description="方向偏差检测")
+    relationship_patterns: Dict[str, Any] = Field(default={}, description="关系模式")
+    energy_consumers: Dict[str, Any] = Field(default={}, description="能量消耗源")
+    growth_trajectory: Dict[str, Any] = Field(default={}, description="成长轨迹")
+    blind_spots: List[str] = Field(default=[], description="盲点提示")
+    writing_time_distribution: Dict[str, Any] = Field(default={}, description="写作时间分布")
+
 
 class EpisodicMemory(BaseModel):
     """情节记忆 - 历史日记摘要"""

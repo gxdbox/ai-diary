@@ -93,8 +93,62 @@ struct Stats: Codable {
 struct Insight: Codable, Identifiable {
     let type: String
     let insight: String
-    
+
     var id: String { "\(type)-\(insight)" }
+}
+
+// ============ 深度洞察模型 ============
+
+struct DeepInsightCategory: Codable, Identifiable {
+    let category: String
+    let categoryName: String
+    let categoryIcon: String
+    let insights: [DeepInsight]
+    let highlight: String?
+
+    var id: String { category }
+
+    enum CodingKeys: String, CodingKey {
+        case category
+        case categoryName = "category_name"
+        case categoryIcon = "category_icon"
+        case insights, highlight
+    }
+}
+
+struct DeepInsight: Codable, Identifiable {
+    let category: String
+    let subType: String
+    let title: String
+    let insight: String
+    let evidence: [String]
+    let severity: String
+    let suggestion: String?
+    let confidence: Double
+    let icon: String?
+    let trend: String?
+
+    var id: String { "\(subType)-\(title)" }
+
+    enum CodingKeys: String, CodingKey {
+        case category
+        case subType = "sub_type"
+        case title, insight, evidence, severity, suggestion, confidence, icon, trend
+    }
+}
+
+struct DeepInsightResponse: Codable {
+    let categories: [DeepInsightCategory]
+    let overallSummary: String
+    let generatedAt: String
+    let analysisPeriodDays: Int
+
+    enum CodingKeys: String, CodingKey {
+        case categories
+        case overallSummary = "overall_summary"
+        case generatedAt = "generated_at"
+        case analysisPeriodDays = "analysis_period_days"
+    }
 }
 
 struct SearchResult: Codable, Identifiable {
