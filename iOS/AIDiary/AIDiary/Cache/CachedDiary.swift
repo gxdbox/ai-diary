@@ -7,16 +7,17 @@ class CachedDiary {
     var rawText: String
     var cleanedText: String?
     var emotion: String?
-    var emotionScore: Double?
+    var emotionScore: Double?  // 兼容旧数据
+    var emotionEnergy: Double?  // 新增
+    var emotionIntensity: Double?  // 新增
     var emotionKeywords: [String]?
     var secondaryEmotions: [String]?
-    var emotionDimension: String?
+    var emotionDimension: String?  // 兼容旧数据
     var emotionConfidence: Double?
     var topics: [String]?
     var keyEvents: [String]?
     var recordingDuration: Int?
     var wordCount: Int
-    // 天气字段（拆分存储，SwiftData 不支持复杂 struct）
     var weatherTemperature: Int?
     var weatherText: String?
     var weatherIcon: String?
@@ -25,12 +26,14 @@ class CachedDiary {
     var updatedAt: Date
     var cachedAt: Date
 
-    init(id: Int, rawText: String, cleanedText: String?, emotion: String?, emotionScore: Double?, emotionKeywords: [String]?, secondaryEmotions: [String]?, emotionDimension: String?, emotionConfidence: Double?, topics: [String]?, keyEvents: [String]?, recordingDuration: Int?, wordCount: Int, weather: Weather?, createdAt: Date, updatedAt: Date) {
+    init(id: Int, rawText: String, cleanedText: String?, emotion: String?, emotionScore: Double?, emotionEnergy: Double?, emotionIntensity: Double?, emotionKeywords: [String]?, secondaryEmotions: [String]?, emotionDimension: String?, emotionConfidence: Double?, topics: [String]?, keyEvents: [String]?, recordingDuration: Int?, wordCount: Int, weather: Weather?, createdAt: Date, updatedAt: Date) {
         self.id = id
         self.rawText = rawText
         self.cleanedText = cleanedText
         self.emotion = emotion
         self.emotionScore = emotionScore
+        self.emotionEnergy = emotionEnergy
+        self.emotionIntensity = emotionIntensity
         self.emotionKeywords = emotionKeywords
         self.secondaryEmotions = secondaryEmotions
         self.emotionDimension = emotionDimension
@@ -39,7 +42,6 @@ class CachedDiary {
         self.keyEvents = keyEvents
         self.recordingDuration = recordingDuration
         self.wordCount = wordCount
-        // 存储 weather
         if let w = weather {
             self.weatherTemperature = w.temperature
             self.weatherText = w.weather
@@ -52,7 +54,6 @@ class CachedDiary {
     }
 
     func toDiary() -> Diary {
-        // 从拆分字段重建 Weather
         let weather: Weather? = {
             if let temp = weatherTemperature, let text = weatherText, let icon = weatherIcon, let loc = weatherLocation {
                 return Weather(temperature: temp, weather: text, weatherIcon: icon, location: loc)
@@ -66,6 +67,8 @@ class CachedDiary {
             cleanedText: cleanedText,
             emotion: emotion,
             emotionScore: emotionScore,
+            emotionEnergy: emotionEnergy,
+            emotionIntensity: emotionIntensity,
             emotionKeywords: emotionKeywords,
             secondaryEmotions: secondaryEmotions,
             emotionDimension: emotionDimension,
@@ -86,14 +89,18 @@ class CachedStats {
     var totalDiaries: Int
     var totalWords: Int
     var streakDays: Int
-    var averageEmotionScore: Double?
+    var averageEmotionScore: Double?  // 兼容旧数据
+    var averageEmotionEnergy: Double?  // 新增
+    var averageEmotionIntensity: Double?  // 新增
     var updatedAt: Date
 
-    init(totalDiaries: Int, totalWords: Int, streakDays: Int, averageEmotionScore: Double?) {
+    init(totalDiaries: Int, totalWords: Int, streakDays: Int, averageEmotionScore: Double?, averageEmotionEnergy: Double?, averageEmotionIntensity: Double?) {
         self.totalDiaries = totalDiaries
         self.totalWords = totalWords
         self.streakDays = streakDays
         self.averageEmotionScore = averageEmotionScore
+        self.averageEmotionEnergy = averageEmotionEnergy
+        self.averageEmotionIntensity = averageEmotionIntensity
         self.updatedAt = Date()
     }
 }

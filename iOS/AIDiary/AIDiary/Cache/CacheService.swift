@@ -33,6 +33,8 @@ actor CacheService {
                 cleanedText: diary.cleanedText,
                 emotion: diary.emotion,
                 emotionScore: diary.emotionScore,
+                emotionEnergy: diary.emotionEnergy,
+                emotionIntensity: diary.emotionIntensity,
                 emotionKeywords: diary.emotionKeywords,
                 secondaryEmotions: diary.secondaryEmotions,
                 emotionDimension: diary.emotionDimension,
@@ -55,14 +57,14 @@ actor CacheService {
         guard let container = modelContainer else { return }
         let context = ModelContext(container)
 
-        // 先查找是否已存在
         let descriptor = FetchDescriptor<CachedDiary>(predicate: #Predicate { $0.id == diary.id })
         if let existing = try? context.fetch(descriptor).first {
-            // 更新现有记录
             existing.rawText = diary.rawText
             existing.cleanedText = diary.cleanedText
             existing.emotion = diary.emotion
             existing.emotionScore = diary.emotionScore
+            existing.emotionEnergy = diary.emotionEnergy
+            existing.emotionIntensity = diary.emotionIntensity
             existing.emotionKeywords = diary.emotionKeywords
             existing.secondaryEmotions = diary.secondaryEmotions
             existing.emotionDimension = diary.emotionDimension
@@ -71,7 +73,6 @@ actor CacheService {
             existing.keyEvents = diary.keyEvents
             existing.recordingDuration = diary.recordingDuration
             existing.wordCount = diary.wordCount
-            // 更新天气
             if let w = diary.weather {
                 existing.weatherTemperature = w.temperature
                 existing.weatherText = w.weather
@@ -87,13 +88,14 @@ actor CacheService {
             existing.updatedAt = diary.updatedAt
             existing.cachedAt = Date()
         } else {
-            // 插入新记录
             let cachedDiary = CachedDiary(
                 id: diary.id,
                 rawText: diary.rawText,
                 cleanedText: diary.cleanedText,
                 emotion: diary.emotion,
                 emotionScore: diary.emotionScore,
+                emotionEnergy: diary.emotionEnergy,
+                emotionIntensity: diary.emotionIntensity,
                 emotionKeywords: diary.emotionKeywords,
                 secondaryEmotions: diary.secondaryEmotions,
                 emotionDimension: diary.emotionDimension,
@@ -152,13 +154,17 @@ actor CacheService {
             cachedStats.totalWords = stats.totalWords
             cachedStats.streakDays = stats.streakDays
             cachedStats.averageEmotionScore = stats.averageEmotionScore
+            cachedStats.averageEmotionEnergy = stats.averageEmotionEnergy
+            cachedStats.averageEmotionIntensity = stats.averageEmotionIntensity
             cachedStats.updatedAt = Date()
         } else {
             let cachedStats = CachedStats(
                 totalDiaries: stats.totalDiaries,
                 totalWords: stats.totalWords,
                 streakDays: stats.streakDays,
-                averageEmotionScore: stats.averageEmotionScore
+                averageEmotionScore: stats.averageEmotionScore,
+                averageEmotionEnergy: stats.averageEmotionEnergy,
+                averageEmotionIntensity: stats.averageEmotionIntensity
             )
             context.insert(cachedStats)
         }
@@ -176,7 +182,9 @@ actor CacheService {
             totalDiaries: cachedStats.totalDiaries,
             totalWords: cachedStats.totalWords,
             streakDays: cachedStats.streakDays,
-            averageEmotionScore: cachedStats.averageEmotionScore
+            averageEmotionScore: cachedStats.averageEmotionScore,
+            averageEmotionEnergy: cachedStats.averageEmotionEnergy,
+            averageEmotionIntensity: cachedStats.averageEmotionIntensity
         )
     }
 

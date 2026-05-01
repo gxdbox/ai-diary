@@ -68,7 +68,7 @@ class AIService:
         if "清洗" in prompt or "删除口语填充词" in prompt:
             return "今天天气不错，我想出去走走。周末约朋友吃饭吧。"
         elif "情绪" in prompt and "JSON" in prompt:
-            return '{"emotion": "高兴", "secondary_emotions": ["期待"], "dimension": "positive", "score": 7.5, "keywords": ["不错", "约朋友"], "confidence": 0.85}'
+            return '{"emotion": "高兴", "secondary_emotions": ["期待"], "energy": 6, "intensity": 6, "keywords": ["不错", "约朋友"], "confidence": 0.85}'
         elif "主题" in prompt or "标签" in prompt:
             return "生活,社交"
         elif "关键事件" in prompt:
@@ -100,9 +100,8 @@ class AIService:
         return result.strip()
 
     async def analyze_emotion(self, text: str) -> Dict:
-        """分析文本情绪 - 使用精细化的情绪分类体系"""
+        """分析文本情绪 - 使用能量值+强度双维度体系"""
 
-        # 构建情绪词汇表提示（分组展示）
         emotion_groups = {
             "积极情绪": ["幸福", "快乐", "欣喜", "欢快", "高兴", "满足", "感恩", "自豪", "期待", "激动", "狂喜", "温情", "自信", "欣慰", "无忧无虑", "如释重负", "归家之喜", "温馨", "冷静"],
             "消极情绪": ["愤怒", "焦虑", "悲伤", "恐惧", "绝望", "沮丧", "忧郁", "孤独", "内疚", "羞耻", "懊悔", "遗憾", "愤恨", "嫉妒", "不满", "气恼", "困惑", "震惊", "恐慌", "厌倦", "冷漠", "气馁", "失望", "厌恶", "惧怕", "尴尬", "仇恨", "不堪重负", "烦躁", "担忧"],
@@ -110,41 +109,51 @@ class AIService:
             "社交情绪": ["共情", "同情", "幸灾乐祸", "替人脸红", "怕麻烦别人", "妒忌", "竞争", "义愤", "怜悯"],
         }
 
-        # 构建提示词
         emotion_list_parts = []
         for group, emotions in emotion_groups.items():
             emotion_list_parts.append(f"\n【{group}】\n{', '.join(emotions)}")
-
         emotion_list = "".join(emotion_list_parts)
 
-        prompt = f"""你是一个专业的情绪分析专家。请分析以下日记内容，从给定的情绪词汇中选择最匹配的情绪。
+        prompt = f"""你是一个专业的情绪分析专家。请分析以下日记内容。
 
 【日记内容】
 {text}
 
-【情绪词汇表】（基于《心情词典》精细化分类）
+【情绪词汇表】
 {emotion_list}
 
 【分析要求】
-1. 从词汇表中选择最匹配的情绪词（可以选择主要情绪和次要情绪）
-2. 判断情绪维度：positive（积极）、negative（消极）、mixed（复杂）、social（社交相关）
-3. 评估情绪强度（1-10）
-4. 提取表达情绪的关键词
+1. 从词汇表中选择最匹配的情绪词
 
-请返回以下JSON格式（仅返回JSON，不要其他内容）：
+2. 判断【情绪能量值】（-10到+10）：
+   - 正数表示有正向能量、消耗少（如：快乐+6、平静+2、满足+4）
+   - 负数表示有负向能量、消耗多（如：焦虑-6、狂怒-9、悲伤-7）
+   - 需根据日记上下文判断，同一情绪词在不同语境下能量值不同
+
+3. 判断【情绪强度】（1到10）：
+   - 表示情绪的强烈程度，不区分正负
+   - 高强度(8-10)：狂喜、狂怒、崩溃
+   - 中强度(5-7)：快乐、愤怒、担忧
+   - 低强度(1-4)：平静、轻微惆怅
+
+【判断原则】
+- 能量值核心：这个情绪对心理能量的影响
+  - 消耗能量→负值，补充能量→正值
+- 强度核心：情绪的激烈程度
+
+请返回JSON格式（仅返回JSON）：
 {{
-    "emotion": "主要情绪（从词汇表中选择一个最匹配的）",
-    "secondary_emotions": ["次要情绪1", "次要情绪2"],
-    "dimension": "情绪维度（positive/negative/mixed/social）",
-    "score": 情绪强度（1-10）,
-    "keywords": ["关键词1", "关键词2"],
-    "confidence": 信心度（0.0-1.0）
+    "emotion": "主要情绪",
+    "secondary_emotions": ["次要情绪"],
+    "energy": 能量值(-10到+10),
+    "intensity": 强度(1-10),
+    "keywords": ["关键词"],
+    "confidence": 信心度(0.0-1.0)
 }}"""
 
         result = await self.call_llm(prompt)
 
         try:
-            # 尝试解析JSON
             json_str = result.strip()
             if "```json" in json_str:
                 json_str = json_str.split("```json")[1].split("```")[0]
@@ -152,26 +161,29 @@ class AIService:
                 json_str = json_str.split("```")[1].split("```")[0]
 
             parsed = json.loads(json_str)
-
-            # 验证并修正情绪词
             primary = parsed.get("emotion", "冷静")
             primary = self._validate_emotion(primary)
+
+            energy = float(parsed.get("energy", 0))
+            intensity = float(parsed.get("intensity", 5.0))
+            energy = max(-10, min(10, energy))
+            intensity = max(1, min(10, intensity))
 
             return {
                 "emotion": primary,
                 "secondary_emotions": parsed.get("secondary_emotions", [])[:2],
-                "dimension": parsed.get("dimension", "mixed"),
-                "score": float(parsed.get("score", 5.0)),
+                "energy": energy,
+                "intensity": intensity,
                 "keywords": parsed.get("keywords", [])[:5],
                 "confidence": float(parsed.get("confidence", 0.8))
             }
         except json.JSONDecodeError:
-            logger.warning(f"JSON解析失败，使用默认值: {result}")
+            logger.warning(f"JSON解析失败: {result}")
             return {
                 "emotion": "冷静",
                 "secondary_emotions": [],
-                "dimension": "mixed",
-                "score": 5.0,
+                "energy": 0.0,
+                "intensity": 5.0,
                 "keywords": [],
                 "confidence": 0.5
             }

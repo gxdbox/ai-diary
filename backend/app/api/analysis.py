@@ -48,13 +48,11 @@ async def get_emotion_trend(
 ):
     """
     获取情绪趋势
-    返回最近N天的情绪变化
+    返回最近N天的情绪能量变化
     """
     try:
-        # 计算起始日期
         start_date = datetime.utcnow() - timedelta(days=days)
 
-        # 查询日记
         result = await db.execute(
             select(Diary)
             .where(Diary.created_at >= start_date)
@@ -68,11 +66,16 @@ async def get_emotion_trend(
             date_str = diary.created_at.strftime("%Y-%m-%d")
             if date_str not in daily_data:
                 daily_data[date_str] = {
-                    "scores": [],
+                    "energies": [],
+                    "intensities": [],
                     "emotions": []
                 }
-            if diary.emotion_score:
-                daily_data[date_str]["scores"].append(diary.emotion_score)
+            # 使用 emotion_energy（兼容旧数据）
+            energy = diary.emotion_energy if diary.emotion_energy is not None else _convert_old_score(diary)
+            if energy is not None:
+                daily_data[date_str]["energies"].append(energy)
+            if diary.emotion_intensity:
+                daily_data[date_str]["intensities"].append(diary.emotion_intensity)
             if diary.emotion:
                 daily_data[date_str]["emotions"].append(diary.emotion)
 
@@ -80,11 +83,13 @@ async def get_emotion_trend(
         trend = []
         for date_str in sorted(daily_data.keys()):
             data = daily_data[date_str]
-            avg_score = sum(data["scores"]) / len(data["scores"]) if data["scores"] else 0
+            avg_energy = sum(data["energies"]) / len(data["energies"]) if data["energies"] else 0
+            avg_intensity = sum(data["intensities"]) / len(data["intensities"]) if data["intensities"] else 0
             trend.append({
                 "date": date_str,
-                "average_score": round(avg_score, 2),
-                "diary_count": len(data["scores"])
+                "average_energy": round(avg_energy, 2),
+                "average_intensity": round(avg_intensity, 2),
+                "diary_count": len(data["energies"])
             })
 
         return {
@@ -146,15 +151,24 @@ async def get_emotion_distribution(
         diaries = result.scalars().all()
 
         # 统计情绪
-        summary = analyzer.get_emotion_summary([{
-            "emotion": d.emotion,
-            "emotion_score": d.emotion_score
-        } for d in diaries])
+        energies = []
+        emotions = []
+        for d in diaries:
+            energy = d.emotion_energy if d.emotion_energy is not None else _convert_old_score(d)
+            if energy is not None:
+                energies.append(energy)
+            if d.emotion:
+                emotions.append(d.emotion)
+
+        # 情绪分布
+        distribution = {}
+        for emotion in emotions:
+            distribution[emotion] = distribution.get(emotion, 0) + 1
 
         return {
-            "average_score": summary["average_score"],
-            "distribution": summary["distribution"],
-            "total_count": summary["total_count"],
+            "average_energy": round(sum(energies) / len(energies), 2) if energies else 0,
+            "distribution": distribution,
+            "total_count": len(diaries),
             "days": days
         }
 
@@ -181,17 +195,28 @@ async def get_stats(
         # 连续记录天数
         streak = await _calculate_streak(db)
 
-        # 平均情绪分
-        avg_result = await db.execute(
-            select(func.avg(Diary.emotion_score))
-        )
-        avg_emotion = avg_result.scalar() or 0
+        # 平均情绪能量（兼容旧数据）
+        result = await db.execute(select(Diary))
+        diaries = result.scalars().all()
+
+        energies = []
+        intensities = []
+        for d in diaries:
+            energy = d.emotion_energy if d.emotion_energy is not None else _convert_old_score(d)
+            if energy is not None:
+                energies.append(energy)
+            if d.emotion_intensity:
+                intensities.append(d.emotion_intensity)
+
+        avg_energy = sum(energies) / len(energies) if energies else 0
+        avg_intensity = sum(intensities) / len(intensities) if intensities else 0
 
         return {
             "total_diaries": total_count,
             "total_words": total_words,
             "streak_days": streak,
-            "average_emotion_score": round(avg_emotion, 2)
+            "average_emotion_energy": round(avg_energy, 2),
+            "average_emotion_intensity": round(avg_intensity, 2)
         }
 
     except Exception as e:
@@ -220,17 +245,15 @@ async def get_insights(
         if not diaries:
             return {"insights": []}
 
-        # 生成洞察
         insights = []
 
         # 情绪洞察
-        emotion_summary = analyzer.get_emotion_summary([{
-            "emotion": d.emotion,
-            "emotion_score": d.emotion_score
-        } for d in diaries])
-
-        if emotion_summary["distribution"]:
-            top_emotion = max(emotion_summary["distribution"].items(), key=lambda x: x[1])
+        emotions = [d.emotion for d in diaries if d.emotion]
+        if emotions:
+            distribution = {}
+            for emotion in emotions:
+                distribution[emotion] = distribution.get(emotion, 0) + 1
+            top_emotion = max(distribution.items(), key=lambda x: x[1])
             insights.append({
                 "type": "emotion",
                 "insight": f"最近{days}天，你最常出现的情绪是「{top_emotion[0]}」，共{top_emotion[1]}次"
@@ -248,7 +271,7 @@ async def get_insights(
                 "insight": f"你最关注「{top_topic[0]}」相关的内容，共提到{top_topic[1]}次"
             })
 
-        # 记录时间洞察（简化版）
+        # 记录时间洞察
         insights.append({
             "type": "habit",
             "insight": f"最近{days}天你共记录了{len(diaries)}篇日记，继续保持！"
@@ -283,7 +306,7 @@ async def get_deep_insights(
             select(Diary)
             .where(Diary.created_at >= start_date)
             .order_by(desc(Diary.created_at))
-            .limit(200)  # 最多分析200篇
+            .limit(200)
         )
         diaries = result.scalars().all()
 
@@ -293,11 +316,13 @@ async def get_deep_insights(
         # 转换为分析服务需要的格式
         diary_data = []
         for d in diaries:
+            energy = d.emotion_energy if d.emotion_energy is not None else _convert_old_score(d)
             diary_data.append({
                 "id": d.id,
                 "created_at": d.created_at,
                 "emotion": d.emotion,
-                "emotion_score": d.emotion_score,
+                "emotion_energy": energy,
+                "emotion_intensity": d.emotion_intensity,
                 "topics": json.loads(d.topics) if d.topics else [],
                 "cleaned_text": d.cleaned_text,
                 "raw_text": d.raw_text
@@ -310,6 +335,23 @@ async def get_deep_insights(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取深度洞察失败: {str(e)}")
+
+
+def _convert_old_score(diary: Diary) -> Optional[float]:
+    """兼容旧数据：将 emotion_score 转换为 emotion_energy"""
+    if diary.emotion_score is None:
+        return None
+
+    # 根据 emotion_dimension 转换
+    # positive → 正值, negative → 负值, mixed → 0
+    score = diary.emotion_score
+
+    if diary.emotion_dimension == "positive":
+        return score * 0.6  # 正向能量
+    elif diary.emotion_dimension == "negative":
+        return -score * 0.9  # 负向能量
+    else:
+        return 0  # mixed 或未知
 
 
 async def _calculate_streak(db: AsyncSession) -> int:

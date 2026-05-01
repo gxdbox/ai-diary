@@ -206,31 +206,55 @@ struct DiaryPreviewView: View {
         HStack(spacing: 12) {
             Text("😊")
                 .font(.system(size: 24))
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("情绪分析")
                     .font(.system(size: 12))
                     .foregroundColor(Color(hex: "9C9B99"))
-                
+
                 HStack(spacing: 8) {
                     Text(diary.emotion ?? "平静")
                         .font(.system(size: 14))
                         .foregroundColor(Color(hex: "1A1918"))
-                    
-                    if let score = diary.emotionScore {
-                        Text("\(String(format: "%.1f", score))/10")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "3D8A5A"))
+
+                    // 能量值展示
+                    let energy = diary.effectiveEnergy
+                    Text(energy >= 0 ? String(format: "+%.1f", energy) : String(format: "%.1f", energy))
+                        .font(.system(size: 14))
+                        .foregroundColor(energyColor(energy))
+
+                    // 强度展示
+                    if let intensity = diary.emotionIntensity {
+                        Text("强度\(String(format: "%.0f", intensity))/10")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: "9C9B99"))
                     }
                 }
             }
-            
+
             Spacer()
         }
         .padding(16)
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.08), radius: 8, y: 2)
+    }
+
+    /// 能量值颜色
+    private func energyColor(_ energy: Double) -> Color {
+        if energy >= 7 {
+            return Color(hex: "2D7A4A")
+        } else if energy >= 3 {
+            return Color(hex: "3D8A5A")
+        } else if energy >= 0 {
+            return Color(hex: "C8F0D8")
+        } else if energy >= -3 {
+            return Color(hex: "F0E0D0")
+        } else if energy >= -7 {
+            return Color(hex: "D89575")
+        } else {
+            return Color(hex: "D08068")
+        }
     }
     
     private func topicsCard(_ topics: [String]) -> some View {
@@ -384,6 +408,8 @@ struct DiaryPreviewView: View {
             cleanedText: "今天去公园散步，天气晴朗",
             emotion: "高兴",
             emotionScore: 7.5,
+            emotionEnergy: 6.0,
+            emotionIntensity: 6.0,
             emotionKeywords: ["开心"],
             secondaryEmotions: ["期待"],
             emotionDimension: "positive",

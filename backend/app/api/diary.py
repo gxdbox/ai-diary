@@ -93,10 +93,12 @@ async def create_diary(
             raw_text=request.raw_text,
             cleaned_text=cleaned_text,
             emotion=analysis["emotion"].get("emotion"),
-            emotion_score=analysis["emotion"].get("score"),
+            emotion_score=analysis["emotion"].get("intensity"),  # 兼容：用 intensity 作为旧 score
+            emotion_energy=analysis["emotion"].get("energy"),
+            emotion_intensity=analysis["emotion"].get("intensity"),
             emotion_keywords=json.dumps(analysis["emotion"].get("keywords", []), ensure_ascii=False),
             secondary_emotions=json.dumps(analysis["emotion"].get("secondary_emotions", []), ensure_ascii=False),
-            emotion_dimension=analysis["emotion"].get("dimension"),
+            emotion_dimension=None,  # 废弃
             emotion_confidence=analysis["emotion"].get("confidence"),
             topics=json.dumps(analysis["topics"], ensure_ascii=False),
             key_events=json.dumps(analysis["key_events"], ensure_ascii=False),
@@ -334,10 +336,12 @@ async def update_diary(
         # 重新分析
         analysis = await ai_service.full_analysis(cleaned_text)
         diary.emotion = analysis["emotion"].get("emotion")
-        diary.emotion_score = analysis["emotion"].get("score")
+        diary.emotion_score = analysis["emotion"].get("intensity")  # 兼容
+        diary.emotion_energy = analysis["emotion"].get("energy")
+        diary.emotion_intensity = analysis["emotion"].get("intensity")
         diary.emotion_keywords = json.dumps(analysis["emotion"].get("keywords", []), ensure_ascii=False)
         diary.secondary_emotions = json.dumps(analysis["emotion"].get("secondary_emotions", []), ensure_ascii=False)
-        diary.emotion_dimension = analysis["emotion"].get("dimension")
+        diary.emotion_dimension = None  # 废弃
         diary.emotion_confidence = analysis["emotion"].get("confidence")
         diary.topics = json.dumps(analysis["topics"], ensure_ascii=False)
         diary.key_events = json.dumps(analysis["key_events"], ensure_ascii=False)
@@ -372,6 +376,8 @@ def _diary_to_response(diary: Diary) -> DiaryResponse:
         cleaned_text=diary.cleaned_text,
         emotion=diary.emotion,
         emotion_score=diary.emotion_score,
+        emotion_energy=diary.emotion_energy,
+        emotion_intensity=diary.emotion_intensity,
         emotion_keywords=json.loads(diary.emotion_keywords) if diary.emotion_keywords else [],
         secondary_emotions=json.loads(diary.secondary_emotions) if diary.secondary_emotions else [],
         emotion_dimension=diary.emotion_dimension,

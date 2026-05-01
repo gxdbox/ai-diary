@@ -147,7 +147,7 @@ struct DiaryDetailView: View {
 
             if let emotion = displayDiary.emotion {
                 VStack(alignment: .leading, spacing: 8) {
-                    // 主要情绪
+                    // 主要情绪 + 能量值
                     HStack(spacing: 8) {
                         Text(emotionEmoji)
                             .font(.system(size: 20))
@@ -155,21 +155,17 @@ struct DiaryDetailView: View {
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(Color(hex: "1A1918"))
 
-                        if let score = displayDiary.emotionScore {
-                            Text("\(String(format: "%.1f", score))/10")
-                                .font(.system(size: 14))
-                                .foregroundColor(emotionDimensionColor)
-                        }
+                        // 能量值展示（核心改动）
+                        let energy = displayDiary.effectiveEnergy
+                        Text(energyLabel(energy))
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(energyColor(energy))
 
-                        // 情绪维度标签
-                        if let dimension = displayDiary.emotionDimension {
-                            Text(dimensionLabel(dimension))
-                                .font(.system(size: 11))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(emotionDimensionColor)
-                                .cornerRadius(4)
+                        // 强度展示
+                        if let intensity = displayDiary.emotionIntensity {
+                            Text("强度\(String(format: "%.0f", intensity))/10")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color(hex: "9C9B99"))
                         }
                     }
 
@@ -394,39 +390,32 @@ struct DiaryDetailView: View {
         }
     }
 
-    private var emotionDimensionColor: Color {
-        guard let dimension = displayDiary.emotionDimension else {
-            return Color(hex: "3D8A5A")
-        }
-        switch dimension {
-        case "positive":
-            return Color(hex: "3D8A5A")
-        case "negative":
-            return Color(hex: "D89575")
-        case "mixed":
-            return Color(hex: "C4935A")
-        case "social":
-            return Color(hex: "5B9BD5")
-        default:
-            return Color(hex: "3D8A5A")
+    /// 能量值标签（正数带+号）
+    private func energyLabel(_ energy: Double) -> String {
+        if energy >= 0 {
+            return String(format: "能量+%.1f", energy)
+        } else {
+            return String(format: "能量%.1f", energy)
         }
     }
 
-    private func dimensionLabel(_ dimension: String) -> String {
-        switch dimension {
-        case "positive":
-            return "积极"
-        case "negative":
-            return "消极"
-        case "mixed":
-            return "复杂"
-        case "social":
-            return "社交"
-        default:
-            return ""
+    /// 能量值颜色
+    private func energyColor(_ energy: Double) -> Color {
+        if energy >= 7 {
+            return Color(hex: "2D7A4A")  // 高正向能量 - 深绿
+        } else if energy >= 3 {
+            return Color(hex: "3D8A5A")  // 中正向能量 - 绿色
+        } else if energy >= 0 {
+            return Color(hex: "C8F0D8")  // 低正向能量 - 浅绿
+        } else if energy >= -3 {
+            return Color(hex: "F0E0D0")  // 低负向能量 - 浅橙
+        } else if energy >= -7 {
+            return Color(hex: "D89575")  // 中负向能量 - 橙色
+        } else {
+            return Color(hex: "D08068")  // 高负向能量 - 红色
         }
     }
-    
+
     private func deleteDiary() {
         isDeleting = true
         Task {
@@ -489,6 +478,8 @@ struct DiaryDetailView: View {
                 cleanedText: "这是测试内容",
                 emotion: "高兴",
                 emotionScore: 7.5,
+                emotionEnergy: 6.0,
+                emotionIntensity: 6.0,
                 emotionKeywords: ["开心"],
                 secondaryEmotions: ["期待"],
                 emotionDimension: "positive",

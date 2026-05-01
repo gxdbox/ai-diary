@@ -33,6 +33,8 @@ class Diary(Base):
     secondary_emotions = Column(Text, nullable=True, comment="次要情绪JSON")
     emotion_dimension = Column(String(20), nullable=True, comment="情绪维度")
     emotion_confidence = Column(Float, nullable=True, comment="情绪识别信心度")
+    emotion_energy = Column(Float, nullable=True, comment="情绪能量值(-10到+10)")
+    emotion_intensity = Column(Float, nullable=True, comment="情绪强度(1-10)")
     topics = Column(Text, nullable=True, comment="主题标签JSON")
     key_events = Column(Text, nullable=True, comment="关键事件JSON")
     recording_duration = Column(Integer, nullable=True, comment="录音时长(秒)")

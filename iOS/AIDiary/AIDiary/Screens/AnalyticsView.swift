@@ -103,9 +103,24 @@ struct AnalyticsView: View {
             StatCard(icon: "🌰", value: "\(stats?.totalDiaries ?? 0)", label: "松果数")
             StatCard(icon: "🐿️", value: "\(stats?.streakDays ?? 0)", label: "连续收藏")
             StatCard(icon: "📝", value: "\(stats?.totalWords ?? 0)", label: "总字数")
-            StatCard(icon: "😊", value: stats?.averageEmotionScore.map { String(format: "%.1f", $0) } ?? "-", label: "平均情绪")
+            // 使用能量值展示（正负区分）
+            StatCard(
+                icon: "⚡",
+                value: energyDisplayValue,
+                label: "平均能量"
+            )
         }
         .padding(.horizontal, 16)
+    }
+
+    private var energyDisplayValue: String {
+        guard let stats = stats else { return "-" }
+        let energy = stats.effectiveEnergy
+        if energy >= 0 {
+            return String(format: "+%.1f", energy)
+        } else {
+            return String(format: "%.1f", energy)
+        }
     }
 
     // 深度洞察卡片
@@ -163,7 +178,12 @@ struct AnalyticsView: View {
 
                 let points = trendData.compactMap { item -> EmotionTrendDataPoint? in
                     guard let date = dateFormatter.date(from: item.date) else { return nil }
-                    return EmotionTrendDataPoint(date: date, score: item.averageScore, diaryCount: item.diaryCount)
+                    return EmotionTrendDataPoint(
+                        date: date,
+                        energy: item.effectiveEnergy,
+                        intensity: item.averageIntensity,
+                        diaryCount: item.diaryCount
+                    )
                 }
 
                 await MainActor.run {

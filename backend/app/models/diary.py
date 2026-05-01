@@ -18,10 +18,12 @@ class DiaryResponse(BaseModel):
     raw_text: str
     cleaned_text: Optional[str] = None
     emotion: Optional[str] = None
-    emotion_score: Optional[float] = None
+    emotion_score: Optional[float] = None  # 保留兼容，逐步废弃
+    emotion_energy: Optional[float] = None  # 新增：情绪能量值(-10到+10)
+    emotion_intensity: Optional[float] = None  # 新增：情绪强度(1-10)
     emotion_keywords: Optional[List[str]] = []
     secondary_emotions: Optional[List[str]] = []
-    emotion_dimension: Optional[str] = None
+    emotion_dimension: Optional[str] = None  # 保留兼容，逐步废弃
     emotion_confidence: Optional[float] = None
     topics: Optional[List[str]] = []
     key_events: Optional[List[str]] = []
@@ -64,8 +66,10 @@ class EmotionResult(BaseModel):
     """情绪分析结果"""
     emotion: str = Field(..., description="主要情绪类型")
     secondary_emotions: List[str] = Field(default=[], description="次要情绪")
-    dimension: str = Field(default="mixed", description="情绪维度")
-    score: float = Field(..., ge=1, le=10, description="情绪强度")
+    dimension: Optional[str] = Field(None, description="情绪维度(兼容旧版)")
+    score: Optional[float] = Field(None, ge=1, le=10, description="情绪强度(兼容旧版)")
+    energy: float = Field(..., ge=-10, le=10, description="情绪能量值")
+    intensity: float = Field(..., ge=1, le=10, description="情绪强度")
     keywords: List[str] = Field(default=[], description="情绪关键词")
     confidence: float = Field(default=0.8, ge=0, le=1, description="识别信心度")
 

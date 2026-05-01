@@ -5,10 +5,12 @@ struct Diary: Codable, Identifiable, Hashable {
     let rawText: String
     let cleanedText: String?
     let emotion: String?
-    let emotionScore: Double?
+    let emotionScore: Double?  // 兼容旧数据
+    let emotionEnergy: Double?  // 新增：情绪能量值
+    let emotionIntensity: Double?  // 新增：情绪强度
     let emotionKeywords: [String]?
     let secondaryEmotions: [String]?
-    let emotionDimension: String?
+    let emotionDimension: String?  // 兼容旧数据
     let emotionConfidence: Double?
     let topics: [String]?
     let keyEvents: [String]?
@@ -18,12 +20,30 @@ struct Diary: Codable, Identifiable, Hashable {
     let createdAt: Date
     let updatedAt: Date
 
+    /// 兼容性计算：优先使用 emotionEnergy，否则从旧数据转换
+    var effectiveEnergy: Double {
+        if let energy = emotionEnergy {
+            return energy
+        }
+        // 旧数据转换
+        if let score = emotionScore {
+            if emotionDimension == "positive" {
+                return score * 0.6
+            } else if emotionDimension == "negative" {
+                return -score * 0.9
+            }
+        }
+        return 0
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case rawText = "raw_text"
         case cleanedText = "cleaned_text"
         case emotion
         case emotionScore = "emotion_score"
+        case emotionEnergy = "emotion_energy"
+        case emotionIntensity = "emotion_intensity"
         case emotionKeywords = "emotion_keywords"
         case secondaryEmotions = "secondary_emotions"
         case emotionDimension = "emotion_dimension"
@@ -80,13 +100,25 @@ struct Stats: Codable {
     let totalDiaries: Int
     let totalWords: Int
     let streakDays: Int
-    let averageEmotionScore: Double?
-    
+    let averageEmotionScore: Double?  // 兼容旧数据
+    let averageEmotionEnergy: Double?  // 新增
+    let averageEmotionIntensity: Double?  // 新增
+
+    /// 兼容性计算
+    var effectiveEnergy: Double {
+        if let energy = averageEmotionEnergy {
+            return energy
+        }
+        return averageEmotionScore ?? 0
+    }
+
     enum CodingKeys: String, CodingKey {
         case totalDiaries = "total_diaries"
         case totalWords = "total_words"
         case streakDays = "streak_days"
         case averageEmotionScore = "average_emotion_score"
+        case averageEmotionEnergy = "average_emotion_energy"
+        case averageEmotionIntensity = "average_emotion_intensity"
     }
 }
 
@@ -171,12 +203,24 @@ struct SearchResponse: Codable {
 
 struct EmotionTrendData: Codable {
     let date: String
-    let averageScore: Double
+    let averageScore: Double?  // 兼容旧数据
+    let averageEnergy: Double?  // 新增
+    let averageIntensity: Double?  // 新增
     let diaryCount: Int
-    
+
+    /// 兼容性计算
+    var effectiveEnergy: Double {
+        if let energy = averageEnergy {
+            return energy
+        }
+        return averageScore ?? 0
+    }
+
     enum CodingKeys: String, CodingKey {
         case date
         case averageScore = "average_score"
+        case averageEnergy = "average_energy"
+        case averageIntensity = "average_intensity"
         case diaryCount = "diary_count"
     }
 }
