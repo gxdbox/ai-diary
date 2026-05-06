@@ -18,6 +18,7 @@ from app.models.memory import (
     RetrievalRequest, ProactiveRetrievalResponse
 )
 from app.models.context import ContextBudget, AssembledContext
+from pydantic import BaseModel
 from app.services.diary_assistant import DiaryAssistantService
 from app.services.context_service import ContextService
 from app.services.ai_service import ai_service
@@ -27,10 +28,15 @@ from app.prompts import build_messages_prompt, DIARY_COMPANION_SYSTEM
 router = APIRouter()
 
 
+class AskRequest(BaseModel):
+    """问答请求体"""
+    conversation_history: Optional[List[Dict]] = None
+
+
 @router.post("/ask")
 async def ask_question(
     question: str = Query(..., description="用户问题"),
-    conversation_history: Optional[List[Dict]] = Body(default=None, description="对话历史"),
+    request: Optional[AskRequest] = None,
     db: Session = Depends(get_sync_db)
 ):
     """
@@ -49,6 +55,7 @@ async def ask_question(
         context_service = ContextService(db, vector_store)
 
         # 2. 构建完整上下文
+        conversation_history = request.conversation_history if request else None
         context = context_service.build_context(
             user_input=question,
             user_id=1,
