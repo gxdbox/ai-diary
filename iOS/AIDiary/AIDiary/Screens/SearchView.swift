@@ -1,55 +1,59 @@
 import SwiftUI
 
+// 单条对话消息
+struct ChatMessage: Identifiable {
+    let id = UUID()
+    let role: String  // "user" 或 "assistant"
+    let content: String
+    var memoryIds: [Int] = []
+    var feedbackGiven: Bool? = nil
+}
+
 struct SearchView: View {
     @State private var query = ""
     @State private var isSearching = false
-    @State private var results: [SearchResult] = []
-    @State private var showAIAnswer = false
-    @State private var aiAnswer = ""
-    @State private var currentMemoryIds: [Int] = []
-    @State private var feedbackGiven: Bool? = nil  // nil = 未反馈, true = 有帮助, false = 无帮助
-    @State private var conversationHistory: [[String: String]] = []  // 对话历史，支持连续对话
+    @State private var chatMessages: [ChatMessage] = []  // 完整对话历史
+    @State private var currentMemoryIds: [Int] = []  // 当前回答的 memory IDs
+    @State private var currentFeedback: Bool? = nil  // 当前回答的反馈状态
 
     var body: some View {
         VStack(spacing: 0) {
             statusBarPlaceholder
-            
+
             searchBox
-            
-            if isSearching {
+
+            if isSearching && chatMessages.isEmpty {
+                // 首次加载状态
                 loadingView
-            } else if !aiAnswer.isEmpty {
-                aiAnswerView
-            } else if results.isEmpty {
+            } else if chatMessages.isEmpty {
+                // 空状态 - 显示快捷问题
                 contentSection
             } else {
-                resultsList
+                // 对话历史
+                chatHistoryView
             }
         }
     }
-    
+
     private var statusBarPlaceholder: some View {
         Color.clear.frame(height: 62)
     }
-    
+
     private var searchBox: some View {
         HStack(spacing: 8) {
             Text("🔍")
                 .font(.system(size: 18))
-            
+
             TextField("问我任何问题", text: $query)
                 .font(.system(size: 15))
                 .foregroundColor(Color(hex: "1A1918"))
                 .onSubmit {
                     askAI()
                 }
-            
+
             if !query.isEmpty {
                 Button {
                     query = ""
-                    results = []
-                    aiAnswer = ""
-                    conversationHistory = []  // 清空对话历史
                 } label: {
                     Text("✕")
                         .font(.system(size: 16))
@@ -68,7 +72,7 @@ struct SearchView: View {
         .padding(.horizontal, 16)
         .padding(.top, 16)
     }
-    
+
     private var loadingView: some View {
         VStack(spacing: 12) {
             Spacer()
@@ -79,116 +83,54 @@ struct SearchView: View {
             Spacer()
         }
     }
-    
-    private var aiAnswerView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("🤖")
-                            .font(.system(size: 20))
-                        Text("AI 回答")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(Color(hex: "1A1918"))
-                    }
 
-                    Text(aiAnswer)
-                        .font(.system(size: 15))
-                        .foregroundColor(Color(hex: "1A1918"))
-                        .lineSpacing(8)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white)
-                .cornerRadius(16)
-                .shadow(color: Color.black.opacity(0.08), radius: 12, y: 2)
-
-                // 反馈按钮
-                if !currentMemoryIds.isEmpty && feedbackGiven == nil {
-                    VStack(spacing: 8) {
-                        Text("这个回答对你有帮助吗？")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "6D6C6A"))
-
-                        HStack(spacing: 12) {
-                            Button {
-                                sendFeedback(wasHelpful: true)
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "hand.thumbsup.fill")
-                                        .font(.system(size: 14))
-                                    Text("有帮助")
-                                        .font(.system(size: 14))
-                                }
-                                .foregroundColor(Color(hex: "3D8A5A"))
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(Color(hex: "C8F0D8"))
-                                .cornerRadius(12)
-                            }
-
-                            Button {
-                                sendFeedback(wasHelpful: false)
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "hand.thumbsdown.fill")
-                                        .font(.system(size: 14))
-                                    Text("没帮助")
-                                        .font(.system(size: 14))
-                                }
-                                .foregroundColor(Color(hex: "D08068"))
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(Color(hex: "F8E0D8"))
-                                .cornerRadius(12)
-                            }
+    private var chatHistoryView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    ForEach(chatMessages) { message in
+                        ChatMessageView(message: message) { wasHelpful in
+                            sendFeedback(for: message.id, wasHelpful: wasHelpful)
                         }
                     }
-                    .padding(.top, 8)
-                }
 
-                // 反馈结果提示
-                if let feedback = feedbackGiven {
-                    HStack(spacing: 8) {
-                        Image(systemName: feedback ? "checkmark.circle.fill" : "info.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(feedback ? Color(hex: "3D8A5A") : Color(hex: "D08068"))
-                        Text(feedback ? "感谢反馈，我会继续改进！" : "收到，下次我会尝试更好的回答")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "6D6C6A"))
+                    // 底部操作按钮
+                    if !isSearching {
+                        Button {
+                            startNewChat()
+                        } label: {
+                            Text("开始新对话")
+                                .font(.system(size: 14))
+                                .foregroundColor(Color(hex: "C4935A"))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color(hex: "C4935A").opacity(0.1))
+                                .cornerRadius(12)
+                        }
+                        .padding(.top, 8)
                     }
-                    .padding(.top, 8)
                 }
-
-                Button {
-                    aiAnswer = ""
-                    results = []
-                    query = ""
-                    currentMemoryIds = []
-                    feedbackGiven = nil
-                    conversationHistory = []  // 清空对话历史，开始新对话
-                } label: {
-                    Text("再问一次")
-                        .font(.system(size: 14))
-                        .foregroundColor(Color(hex: "C4935A"))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color(hex: "C4935A").opacity(0.1))
-                        .cornerRadius(12)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 100)
+            }
+            .onChange(of: chatMessages.count) { _, _ in
+                // 自动滚动到底部
+                if let lastMessage = chatMessages.last {
+                    withAnimation {
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                    }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 100)
         }
     }
-    
+
     private var contentSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("快捷问题")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(Color(hex: "1A1918"))
                 .padding(.top, 24)
-            
+
             HStack(spacing: 8) {
                 QuickQuestionChip(question: "最近开心的事") {
                     query = "最近开心的事"
@@ -199,7 +141,7 @@ struct SearchView: View {
                     askAI()
                 }
             }
-            
+
             HStack(spacing: 8) {
                 QuickQuestionChip(question: "这周的情绪变化") {
                     query = "这周的情绪变化"
@@ -213,80 +155,143 @@ struct SearchView: View {
         }
         .padding(.horizontal, 16)
     }
-    
-    private var resultsList: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(results) { result in
-                    SearchResultCard(result: result)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 100)
-        }
-    }
-    
+
+    // MARK: - Actions
+
     private func askAI() {
         guard !query.isEmpty else { return }
         isSearching = true
-        aiAnswer = ""
-        currentMemoryIds = []
-        feedbackGiven = nil
+
+        // 构建 API 需要的对话历史格式
+        let apiHistory = chatMessages.map { ["role": $0.role, "content": $0.content] }
+
         Task {
             do {
-                // 传递对话历史支持连续对话
                 let response = try await APIService.shared.askQuestion(
                     question: query,
-                    conversationHistory: conversationHistory.isEmpty ? nil : conversationHistory
+                    conversationHistory: apiHistory.isEmpty ? nil : apiHistory
                 )
                 await MainActor.run {
-                    aiAnswer = response.answer
+                    // 添加用户消息
+                    chatMessages.append(ChatMessage(role: "user", content: query))
+                    // 添加 AI 回答
+                    let aiMessage = ChatMessage(
+                        role: "assistant",
+                        content: response.answer,
+                        memoryIds: response.memoryIds ?? []
+                    )
+                    chatMessages.append(aiMessage)
                     currentMemoryIds = response.memoryIds ?? []
+                    currentFeedback = nil
                     isSearching = false
-
-                    // 保存到对话历史
-                    conversationHistory.append(["role": "user", "content": query])
-                    conversationHistory.append(["role": "assistant", "content": response.answer])
+                    query = ""
                 }
             } catch {
                 await MainActor.run {
-                    aiAnswer = "抱歉，AI 思考时遇到了问题。请稍后再试。"
+                    chatMessages.append(ChatMessage(role: "user", content: query))
+                    chatMessages.append(ChatMessage(role: "assistant", content: "抱歉，AI 思考时遇到了问题。请稍后再试。"))
                     isSearching = false
+                    query = ""
                 }
             }
         }
     }
 
-    private func sendFeedback(wasHelpful: Bool) {
-        guard !currentMemoryIds.isEmpty else { return }
+    private func sendFeedback(for messageId: UUID, wasHelpful: Bool) {
+        // 找到对应消息的 memory IDs
+        guard let message = chatMessages.first(where: { $0.id == messageId }),
+              !message.memoryIds.isEmpty else { return }
+
         Task {
             do {
-                try await APIService.shared.sendFeedback(memoryIds: currentMemoryIds, wasHelpful: wasHelpful)
+                try await APIService.shared.sendFeedback(memoryIds: message.memoryIds, wasHelpful: wasHelpful)
                 await MainActor.run {
-                    feedbackGiven = wasHelpful
+                    if let idx = chatMessages.firstIndex(where: { $0.id == messageId }) {
+                        chatMessages[idx].feedbackGiven = wasHelpful
+                    }
                 }
             } catch {
-                // 反馈失败不影响用户体验，静默处理
+                // 静默处理
                 await MainActor.run {
-                    feedbackGiven = wasHelpful
+                    if let idx = chatMessages.firstIndex(where: { $0.id == messageId }) {
+                        chatMessages[idx].feedbackGiven = wasHelpful
+                    }
                 }
             }
         }
     }
-    
-    private func performSearch() {
-        guard !query.isEmpty else { return }
-        isSearching = true
-        Task {
-            do {
-                let response = try await APIService.shared.semanticSearch(query: query)
-                await MainActor.run {
-                    results = response.results
-                    isSearching = false
+
+    private func startNewChat() {
+        chatMessages = []
+        currentMemoryIds = []
+        currentFeedback = nil
+    }
+}
+
+// MARK: - Chat Message View
+
+struct ChatMessageView: View {
+    let message: ChatMessage
+    let onFeedback: (Bool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 消息内容
+            HStack(alignment: .top, spacing: 8) {
+                if message.role == "assistant" {
+                    Text("🤖")
+                        .font(.system(size: 18))
                 }
-            } catch {
-                await MainActor.run {
-                    isSearching = false
+
+                Text(message.content)
+                    .font(.system(size: 15))
+                    .foregroundColor(Color(hex: "1A1918"))
+                    .lineSpacing(6)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(message.role == "user" ? Color(hex: "F5F4F0") : Color.white)
+            .cornerRadius(14)
+
+            // AI 回答的反馈按钮
+            if message.role == "assistant" && !message.memoryIds.isEmpty {
+                if let feedback = message.feedbackGiven {
+                    HStack(spacing: 6) {
+                        Image(systemName: feedback ? "checkmark.circle.fill" : "info.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(feedback ? Color(hex: "3D8A5A") : Color(hex: "D08068"))
+                        Text(feedback ? "感谢反馈" : "已收到")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: "9C9B99"))
+                    }
+                    .padding(.leading, 14)
+                } else {
+                    HStack(spacing: 16) {
+                        Button {
+                            onFeedback(true)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "hand.thumbsup")
+                                    .font(.system(size: 12))
+                                Text("有帮助")
+                                    .font(.system(size: 12))
+                            }
+                            .foregroundColor(Color(hex: "6D6C6A"))
+                        }
+
+                        Button {
+                            onFeedback(false)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "hand.thumbsdown")
+                                    .font(.system(size: 12))
+                                Text("没帮助")
+                                    .font(.system(size: 12))
+                            }
+                            .foregroundColor(Color(hex: "6D6C6A"))
+                        }
+                    }
+                    .padding(.leading, 14)
                 }
             }
         }
@@ -296,12 +301,12 @@ struct SearchView: View {
 struct QuickQuestionChip: View {
     let question: String
     let action: () -> Void
-    
+
     init(question: String, action: @escaping () -> Void = {}) {
         self.question = question
         self.action = action
     }
-    
+
     var body: some View {
         Button(action: action) {
             Text(question)
@@ -316,28 +321,6 @@ struct QuickQuestionChip: View {
                         .stroke(Color(hex: "E5E4E1"), lineWidth: 1)
                 )
         }
-    }
-}
-
-struct SearchResultCard: View {
-    let result: SearchResult
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(result.text)
-                .font(.system(size: 14))
-                .foregroundColor(Color(hex: "1A1918"))
-                .lineLimit(3)
-            
-            Text("相关度: \(Int(result.score * 100))%")
-                .font(.system(size: 12))
-                .foregroundColor(Color(hex: "9C9B99"))
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.08), radius: 8, y: 2)
     }
 }
 
