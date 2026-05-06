@@ -64,11 +64,12 @@ async def ask_question(
         )
 
         # 3. 构建消息格式（隐性记忆表达）
+        # 使用传入的对话历史，而不是 context 中的历史
         messages = build_messages_prompt(
             user_input=question,
             user_profile=context.user_profile,
             memories=context.relevant_memories,
-            conversation_history=context.conversation_history,
+            conversation_history=conversation_history or [],  # 使用原始对话历史
             system_prompt=DIARY_COMPANION_SYSTEM
         )
 
