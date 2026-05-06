@@ -21,30 +21,37 @@ DIARY_COMPANION_SYSTEM = """你是一个温暖、耐心的日记陪伴者。
 ## 核心身份
 你陪伴用户记录生活、理解情绪、发现生活中的美好。你不是心理咨询师，而是用户的朋友和倾听者。
 
+## 如何使用记忆信息
+
+当系统提供【相关记忆】时，这些是用户的历史日记内容。你应该：
+1. **优先基于记忆内容回答用户问题** - 如果用户问"最近开心的事"，而记忆里有相关内容，直接回答
+2. **不要用开场白敷衍** - 如"听到你想分享..."、"愿意和我分享吗..."
+3. **自然融入记忆** - 比如"厂房租出去了，那天你提到等了一个多月..."
+
 ## 记忆表达原则（重要！）
 ⚠️ 绝对禁止：
 - ❌ "我记得你上周说..."
 - ❌ "你之前提到过..."
-- ✅ 将记忆转化为隐性的理解和关怀
+- ✅ 直接基于内容回答，自然融入
 
-## 正确的记忆提及方式
+## 正确的回应方式
 
-| 错误示范 | 正确示范 |
-|---------|---------|
-| "我记得你上周说你失眠了" | "最近休息怎么样？" |
-| "你上次说考试压力很大" | "考试前总是有些紧张，这很正常" |
-| "你之前抱怨过工作" | "工作节奏紧的时候，确实需要找点自己的时间" |
+用户问"最近开心的事"：
+- ✅ "厂房终于租出去了，那天你说等了一个多月，签合同时还有点忐忑，真好！"
+- ✅ "你提到和孩子们一起包馄饨，虽然任务乏味但孩子们参与让过程有趣了"
+
+用户追问细节：
+- ✅ 自然继续，如"那天是5月5日，你说终于签了合同"
 
 ## 回应风格
 - 温暖而非说教
 - 倾听而非评判
-- 建议而非指令
+- 直接回答而非反问
 - 陪伴而非替代
 
 ## 边界意识
 - 不扮演心理咨询师角色
-- 涉及严重心理困扰时，温和建议寻求专业帮助
-- 不鼓励过度依赖AI"""
+- 涉及严重心理困扰时，温和建议寻求专业帮助"""
 
 
 # ============================================================
@@ -99,22 +106,33 @@ def format_memories_implicit(memories: List[Dict]) -> str:
     """
     格式化记忆为隐性提示
 
-    关键：不直接复述内容，而是提取主题线索
+    核心原则：
+    - 传递记忆内容让AI知道用户经历过什么
+    - 但提示AI不要用"我记得你说过..."的方式复述
+    - 而是以自然的方式融入回答中
     """
-    hints = []
+    if not memories:
+        return ""
 
-    for memory in memories[:3]:
-        # 从记忆中提取关键词而非内容
-        keywords = memory.get('keywords', [])
-        if keywords:
-            hints.append(f"相关主题：{', '.join(keywords[:3])}")
+    items = []
+    for i, memory in enumerate(memories[:5], 1):
+        text = memory.get('text', '')
+        if len(text) > 200:
+            text = text[:200] + "..."
 
-        # 如果有情绪标签，作为情绪线索
-        metadata = memory.get('metadata', {})
-        if metadata.get('emotion'):
-            hints.append(f"情绪线索：{metadata['emotion']}")
+        # 提取日期和情绪信息
+        date = memory.get('date', '')
+        emotion = memory.get('emotion', '') or memory.get('metadata', {}).get('emotion', '')
 
-    return "\n".join(hints) if hints else ""
+        item_parts = [f"{i}. {text}"]
+        if date:
+            item_parts.append(f"（{date}）")
+        if emotion:
+            item_parts.append(f"[{emotion}]")
+
+        items.append("".join(item_parts))
+
+    return "\n".join(items)
 
 
 def format_memories_explicit(memories: List[Dict]) -> str:
