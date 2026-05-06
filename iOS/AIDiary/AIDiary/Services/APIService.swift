@@ -123,7 +123,7 @@ class APIService {
         return response.trend
     }
     
-    func askQuestion(question: String) async throws -> AskResponse {
+    func askQuestion(question: String, conversationHistory: [[String: String]]? = nil) async throws -> AskResponse {
         let urlString = "\(baseURL)/api/assistant/ask?question=\(question.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
         guard let url = URL(string: urlString) else {
             throw URLError(.badURL)
@@ -132,7 +132,13 @@ class APIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [:])
+
+        // 支持传递对话历史
+        var body: [String: Any] = [:]
+        if let history = conversationHistory, !history.isEmpty {
+            body["conversation_history"] = history
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)

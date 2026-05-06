@@ -8,6 +8,7 @@ struct SearchView: View {
     @State private var aiAnswer = ""
     @State private var currentMemoryIds: [Int] = []
     @State private var feedbackGiven: Bool? = nil  // nil = 未反馈, true = 有帮助, false = 无帮助
+    @State private var conversationHistory: [[String: String]] = []  // 对话历史，支持连续对话
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,6 +49,7 @@ struct SearchView: View {
                     query = ""
                     results = []
                     aiAnswer = ""
+                    conversationHistory = []  // 清空对话历史
                 } label: {
                     Text("✕")
                         .font(.system(size: 16))
@@ -164,6 +166,7 @@ struct SearchView: View {
                     query = ""
                     currentMemoryIds = []
                     feedbackGiven = nil
+                    conversationHistory = []  // 清空对话历史，开始新对话
                 } label: {
                     Text("再问一次")
                         .font(.system(size: 14))
@@ -231,11 +234,19 @@ struct SearchView: View {
         feedbackGiven = nil
         Task {
             do {
-                let response = try await APIService.shared.askQuestion(question: query)
+                // 传递对话历史支持连续对话
+                let response = try await APIService.shared.askQuestion(
+                    question: query,
+                    conversationHistory: conversationHistory.isEmpty ? nil : conversationHistory
+                )
                 await MainActor.run {
                     aiAnswer = response.answer
                     currentMemoryIds = response.memoryIds ?? []
                     isSearching = false
+
+                    // 保存到对话历史
+                    conversationHistory.append(["role": "user", "content": query])
+                    conversationHistory.append(["role": "assistant", "content": response.answer])
                 }
             } catch {
                 await MainActor.run {
