@@ -1,10 +1,11 @@
 """
-日记助手 API 路由 - 基于 ProactAgent 论文思想
+日记助手 API 路由 - 基于 ProactAgent 论文思想 + 上下文管理技巧
 
 提供智能日记辅助功能：
-1. AI 问答（整合三层记忆）
+1. AI 问答（整合三层记忆 + 上下文管理）
 2. 主动检索相关记忆
 3. 用户上下文
+4. 隐性记忆表达（避免监控感）
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
@@ -16,57 +17,75 @@ from app.db.database import get_sync_db, Diary
 from app.models.memory import (
     RetrievalRequest, ProactiveRetrievalResponse
 )
+from app.models.context import ContextBudget, AssembledContext
+from pydantic import BaseModel
 from app.services.diary_assistant import DiaryAssistantService
+from app.services.context_service import ContextService
 from app.services.ai_service import ai_service
+from app.services.vector_store import vector_store
+from app.prompts import build_messages_prompt, DIARY_COMPANION_SYSTEM
 
 router = APIRouter()
+
+
+class AskRequest(BaseModel):
+    """问答请求体"""
+    conversation_history: Optional[List[Dict]] = None
 
 
 @router.post("/ask")
 async def ask_question(
     question: str = Query(..., description="用户问题"),
+    request: Optional[AskRequest] = None,
     db: Session = Depends(get_sync_db)
 ):
     """
-    AI 智能问答
+    AI 智能问答（升级版 - 整合上下文管理）
 
-    整合 ProactAgent 三层记忆：
-    - 事实记忆：用户偏好、情绪模式
-    - 情节记忆：相关历史日记
-    - 行为技能：写作习惯
+    核心升级：
+    1. 使用 ContextService 组装完整上下文
+    2. 应用时间衰减算法
+    3. 隐性记忆表达（避免监控感）
+    4. 智能上下文裁剪
 
-    返回：AI 回答 + 相关日记列表
+    返回：AI 回答 + 相关日记列表 + 上下文信息
     """
     try:
-        assistant = DiaryAssistantService(db)
+        # 1. 初始化上下文服务
+        context_service = ContextService(db, vector_store)
 
-        # 1. 主动检索相关记忆
-        retrieval_response = assistant.retrieval_service.retrieve(
-            RetrievalRequest(
-                current_context=question,
-                max_results=5,
-                min_importance=0.3
-            )
+        # 2. 构建完整上下文
+        conversation_history = request.conversation_history if request else None
+        context = context_service.build_context(
+            user_input=question,
+            user_id=1,
+            conversation_history=conversation_history or [],
+            budget=ContextBudget()
         )
 
-        # 2. 获取用户上下文（偏好、情绪模式）
-        user_context = assistant.get_user_context()
+        # 3. 构建消息格式（隐性记忆表达）
+        # 使用传入的对话历史，而不是 context 中的历史
+        messages = build_messages_prompt(
+            user_input=question,
+            user_profile=context.user_profile,
+            memories=context.relevant_memories,
+            conversation_history=conversation_history or [],  # 使用原始对话历史
+            system_prompt=DIARY_COMPANION_SYSTEM
+        )
 
-        # 3. 构建上下文内容
-        context_parts = []
+        # 4. 调用 AI（使用新的消息格式）
+        answer = await ai_service.call_llm_with_messages(messages)
+
+        # 5. 构建返回的相关日记列表
         related_diaries = []
-
-        # 添加情节记忆（相关日记）
-        for result in retrieval_response.results[:3]:
-            if result.memory.memory_type.value == "episodic" and result.memory.source_diary_id:
+        for memory in context.relevant_memories[:3]:
+            source_id = memory.get('source_diary_id') or memory.get('metadata', {}).get('source_diary_id')
+            if source_id:
                 diary_result = db.execute(
-                    select(Diary).where(Diary.id == result.memory.source_diary_id)
+                    select(Diary).where(Diary.id == source_id)
                 )
                 diary = diary_result.scalar_one_or_none()
                 if diary:
-                    context_parts.append(
-                        f"[{diary.created_at.strftime('%Y-%m-%d')}]\n{diary.cleaned_text[:300]}"
-                    )
                     related_diaries.append({
                         "id": diary.id,
                         "text": diary.cleaned_text[:100] + "..." if len(diary.cleaned_text) > 100 else diary.cleaned_text,
@@ -74,36 +93,15 @@ async def ask_question(
                         "emotion": diary.emotion
                     })
 
-        # 添加用户上下文信息
-        if user_context.get("common_topics"):
-            context_parts.append(
-                f"[用户偏好]\n常写主题：{', '.join(user_context['common_topics'][:5])}"
-            )
-
-        if user_context.get("emotion_distribution"):
-            top_emotions = sorted(
-                user_context["emotion_distribution"].items(),
-                key=lambda x: x[1],
-                reverse=True
-            )[:3]
-            context_parts.append(
-                f"[情绪模式]\n常见情绪：{', '.join([e[0] for e in top_emotions])}"
-            )
-
-        context = "\n\n---\n\n".join(context_parts) if context_parts else "暂无相关记忆"
-
-        # 4. 调用 AI 生成回答
-        answer = await ai_service.answer_question(question, context)
-
-        # 收集检索到的 memory_ids 用于反馈
-        memory_ids = [r.memory.id for r in retrieval_response.results if r.memory.id]
+        # 6. 收集 memory_ids 用于反馈
+        memory_ids = [m.get('id') for m in context.relevant_memories if m.get('id')]
 
         return {
             "answer": answer,
             "related_diaries": related_diaries,
             "memory_ids": memory_ids,
-            "context_used": len(context_parts),
-            "retrieval_trigger": retrieval_response.retrieval_trigger
+            "context_tokens": context.total_tokens,
+            "memories_used": len(context.relevant_memories)
         }
 
     except Exception as e:

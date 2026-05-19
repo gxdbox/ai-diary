@@ -28,7 +28,7 @@ class AIService:
         self.model = DEEPSEEK_MODEL
 
     async def call_llm(self, prompt: str, max_tokens: int = 2000) -> str:
-        """调用大语言模型"""
+        """调用大语言模型（简单文本模式）"""
         if not self.api_key:
             logger.warning("未配置API Key，使用模拟响应")
             return self._mock_response(prompt)
@@ -62,6 +62,61 @@ class AIService:
         except Exception as e:
             logger.error(f"AI服务异常: {str(e)}")
             return self._mock_response(prompt)
+
+    async def call_llm_with_messages(
+        self,
+        messages: List[Dict],
+        max_tokens: int = 2000
+    ) -> str:
+        """
+        调用大语言模型（消息列表模式）
+
+        支持完整的对话历史和系统提示词
+        适用于上下文管理场景
+        """
+        if not self.api_key:
+            logger.warning("未配置API Key，使用模拟响应")
+            # 从消息中提取用户最后输入
+            user_msg = ""
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    user_msg = msg.get("content", "")
+                    break
+            return self._mock_response(user_msg)
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "max_tokens": max_tokens,
+                        "temperature": 0.7,
+                        "top_p": 0.9
+                    }
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    return data["choices"][0]["message"]["content"]
+                else:
+                    logger.error(f"AI调用失败: {response.status_code} - {response.text}")
+                    raise Exception(f"AI调用失败: {response.text}")
+
+        except Exception as e:
+            logger.error(f"AI服务异常: {str(e)}")
+            # 降级处理
+            user_msg = ""
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    user_msg = msg.get("content", "")
+                    break
+            return self._mock_response(user_msg)
 
     def _mock_response(self, prompt: str) -> str:
         """模拟响应（用于测试）"""
