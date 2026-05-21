@@ -3,7 +3,7 @@ import Foundation
 struct Diary: Codable, Identifiable, Hashable {
     let id: Int
     let rawText: String
-    let cleanedText: String?
+    var cleanedText: String?
     let emotion: String?
     let emotionScore: Double?  // 兼容旧数据
     let emotionEnergy: Double?  // 新增：情绪能量值

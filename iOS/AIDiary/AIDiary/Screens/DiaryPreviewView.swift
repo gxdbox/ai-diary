@@ -2,7 +2,7 @@ import SwiftUI
 import CoreLocation
 
 struct DiaryPreviewView: View {
-    let diary: Diary
+    @State var diary: Diary
 
     @Environment(\.dismiss) private var dismiss
     @State private var activeTab: Tab = .ai
@@ -153,6 +153,7 @@ struct DiaryPreviewView: View {
                     
                     Button {
                         withAnimation {
+                            diary.cleanedText = editedText
                             isEditing = false
                         }
                     } label: {
