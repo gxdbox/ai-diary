@@ -16,6 +16,8 @@ ai_diary/
 └── docs/              # 文档
 ```
 
+**部署：** 阿里云服务器 (8.136.124.182) → https://51pic.xyz
+
 ---
 
 ## Build & Run Commands
@@ -34,7 +36,7 @@ pip install -r requirements.txt
 
 # 配置环境变量
 cp .env.example .env
-# 编辑 .env 填入 DASHSCOPE_API_KEY
+# 编辑 .env 填入 DEEPSEEK_API_KEY
 
 # 启动开发服务器
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -58,6 +60,9 @@ open AIDiary.xcodeproj
 
 # 运行测试
 xcodebuild test -scheme AIDiary -destination 'platform=iOS Simulator,name=iPhone 15'
+
+# 编译验证（修改 Swift 代码后必须运行）
+xcodebuild -scheme AIDiary -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
 
 ---
@@ -161,6 +166,25 @@ except DashScopeError as e:
 - 使用 `async/await`
 - 数据库使用 `aiosqlite`
 
+**API 字段命名：**
+```python
+# 使用 snake_case，与数据库字段一致
+class DiaryResponse(BaseModel):
+    raw_text: str
+    weather_icon: str  # 不是 weatherIcon
+```
+
+**必须导入 datetime：**
+```python
+from datetime import datetime
+```
+
+**数据库 JSON 字段：**
+```python
+diary.weather = json.dumps(weather_data.model_dump())
+weather = json.loads(diary.weather) if diary.weather else None
+```
+
 ---
 
 ### Swift (iOS)
@@ -232,6 +256,79 @@ struct DiaryListView: View {
 }
 ```
 
+**字段命名映射（重要）：**
+
+Swift 使用 `camelCase`，后端 API 使用 `snake_case`，必须添加 `CodingKeys` 映射：
+
+```swift
+struct Weather: Codable {
+    let weatherIcon: String  // Swift 用 camelCase
+
+    enum CodingKeys: String, CodingKey {
+        case weatherIcon = "weather_icon"  // 映射到 API 的 snake_case
+    }
+}
+```
+
+**常见映射**：
+- `weatherIcon` → `weather_icon`
+- `createdAt` → `created_at`
+- `updatedAt` → `updated_at`
+- `emotionScore` → `emotion_score`
+- `rawText` → `raw_text`
+- `cleanedText` → `cleaned_text`
+
+**Swift 并发注意事项：**
+
+- `@ObservableObject` 类默认被 MainActor 隔离
+- 在 `Task.detached` 中调用需使用 `nonisolated` 方法
+- 单例类需添加 `Sendable` 协议或使用 `nonisolated(unsafe)`
+- Codable struct 在非隔离上下文解码需标记 `nonisolated`
+
+```swift
+// 正确示例
+class LocationService: NSObject, CLLocationManagerDelegate, Sendable {
+    static let shared = LocationService()
+
+    nonisolated func getCurrentLocation(completion: @escaping (CLLocation?) -> Void) {
+        // ...
+    }
+}
+```
+
+**Preview 代码注意：**
+
+Preview 中的 Diary 初始化必须包含所有字段，包括可选字段（用合理默认值）：
+
+```swift
+Diary(
+    id: 1,
+    rawText: "测试",
+    // ... 所有其他字段
+    weather: Weather(temperature: 26, weather: "晴", weatherIcon: "100", location: "北京"),
+    createdAt: Date(),
+    updatedAt: Date()
+)
+```
+
+**SwiftData 缓存限制：**
+
+SwiftData 不支持复杂 struct（如 Weather），需拆分为多个字段：
+
+```swift
+@Model
+class CachedDiary {
+    var weatherTemperature: Int?
+    var weatherText: String?
+    var weatherIcon: String?
+    var weatherLocation: String?
+
+    func toDiary() -> Diary {
+        // 从拆分字段重建 Weather
+    }
+}
+```
+
 ---
 
 ## Architecture Patterns
@@ -242,6 +339,7 @@ struct DiaryListView: View {
 - **服务层** (`app/services/`): 业务逻辑
 - **模型层** (`app/models/`): SQLAlchemy 模型
 - **数据库** (`app/db/`): 数据库连接和初始化
+- **AI 子包** (`app/services/ai/`): 统一 LLM 调用、Prompt 模板、安全过滤
 
 ### iOS (SwiftUI)
 
@@ -249,6 +347,7 @@ struct DiaryListView: View {
 - **Components** (`AIDiary/Components/`): 可复用组件
 - **Services** (`AIDiary/Services/`): API 调用、缓存管理
 - **Models** (`AIDiary/Models/`): 数据模型定义
+- **Cache** (`AIDiary/Cache/`): SwiftData 缓存模型
 
 ---
 
@@ -306,7 +405,7 @@ mergedDiaries = response.items
 
 ### Backend (.env)
 ```bash
-DASHSCOPE_API_KEY=your_api_key
+DEEPSEEK_API_KEY=your_api_key
 DATABASE_URL=sqlite+aiosqlite:///./ai_diary.db
 CHROMA_PERSIST_DIR=./chroma_data
 DEBUG=true
@@ -315,7 +414,30 @@ DEBUG=true
 ### iOS
 - API 地址配置在 `Services/APIService.swift`
 - 默认：`http://localhost:8000`
-- 生产环境需修改为实际服务器地址
+- 生产环境：`https://51pic.xyz`
+
+---
+
+## Deployment
+
+### 后端部署到阿里云
+
+```bash
+# 1. 停止服务
+ssh root@8.136.124.182 "pkill -f uvicorn"
+
+# 2. 备份数据库
+ssh root@8.136.124.182 "cd ~/ai-diary && cp ai_diary.db ai_diary.db.bak"
+
+# 3. 上传代码
+scp -r backend/app/* root@8.136.124.182:~/ai-diary/app/
+
+# 4. 启动服务
+ssh root@8.136.124.182 "cd ~/ai-diary && nohup /opt/conda/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 > /dev/null 2>&1 &"
+
+# 5. 验证
+curl https://51pic.xyz/health
+```
 
 ---
 
@@ -356,9 +478,104 @@ DEBUG=true
 
 ### 修改 AI 服务逻辑
 
-1. 编辑 `backend/app/services/ai_service.py`
+1. 编辑 `backend/app/services/ai_service.py` 或 `backend/app/services/ai/`
 2. 更新相关 API 端点
 3. 测试 AI 响应格式
+
+---
+
+## iOS 权限问题诊断流程（重要教训）
+
+**遇到 iOS 系统权限问题时，必须先检查项目配置，再检查代码！**
+
+### 正确的诊断顺序：
+
+1. **检查 project.pbxproj 配置**
+   ```bash
+   grep "INFOPLIST_KEY_NS" project.pbxproj
+   grep "GENERATE_INFOPLIST_FILE" project.pbxproj
+   ```
+   - 如果 `GENERATE_INFOPLIST_FILE = YES`，权限描述必须通过 `INFOPLIST_KEY_*` 配置
+   - 自定义 Info.plist 文件可能不生效
+
+2. **验证权限描述是否存在**
+   - 位置：`INFOPLIST_KEY_NSLocationWhenInUseUsageDescription`
+   - 相机：`INFOPLIST_KEY_NSCameraUsageDescription`
+   - 麦克风：`INFOPLIST_KEY_NSMicrophoneUsageDescription`
+   - 照片：`INFOPLIST_KEY_NSPhotoLibraryUsageDescription`
+
+3. **配置正确后再检查代码逻辑**
+
+### 错误的诊断方式（教训）：
+
+❌ 直接修改代码逻辑、添加调试日志
+❌ 假设配置正确，在代码层面反复调试
+❌ 忽略用户提供的线索（如"只有两个选项而不是四个")
+
+---
+
+## 功能开发完成后的清理流程
+
+**每次功能开发完成后，必须执行以下清理步骤：**
+
+### 清理内容：
+
+1. **调试日志**
+   - 移除所有 `print()` 调试语句（特别是带 emoji 标记的）
+   - 保留必要的错误日志（使用 `logger` 或 `NSLog`）
+
+2. **测试数据**
+   - 检查数据库是否有测试记录需要删除
+   - 检查代码中是否有硬编码的测试值
+
+3. **不必要的注释**
+   - 移除临时性的调试注释
+   - 保留解释复杂逻辑的必要注释
+
+### 清理流程：
+
+```bash
+# 1. 检查调试日志
+grep -r "print(" iOS/AIDiary/AIDiary/
+
+# 2. 检查测试数据关键词
+grep -r "测试|test|debug|DEBUG" backend/app/
+grep -r "测试|test|debug" iOS/AIDiary/AIDiary/
+
+# 3. 清理并提交
+git add <cleaned files>
+git commit -m "chore: 清理调试日志，精简代码"
+
+# 4. 合并分支到 master
+git checkout master
+git merge <feature-branch>
+git push origin master
+```
+
+### 注意：
+
+- **生产环境的 fallback 机制要保留**（如 `_mock_response`）
+- **必要的错误处理和日志要保留**
+- **功能说明注释可保留**，但调试注释要删除
+
+---
+
+## Git 提交规范
+
+### Commit 格式
+
+```
+<type>: <简短描述>
+
+<详细说明（可选）>
+```
+
+**type 类型**：
+- `feat`: 新功能
+- `fix`: 修复 bug
+- `chore`: 配置/杂项
+- `refactor`: 重构
+- `docs`: 文档
 
 ---
 
@@ -375,8 +592,21 @@ DEBUG=true
 ## Important Notes
 
 1. **不要提交**: `.env`, `venv/`, `node_modules/`, `*.db`, `__pycache__/`
-2. **API Key**: 永远不要提交 DASHSCOPE_API_KEY 到 Git
+2. **API Key**: 永远不要提交 DEEPSEEK_API_KEY 到 Git
 3. **测试**: 每个新功能必须配套测试用例
 4. **类型**: 后端必须用 Pydantic，iOS必须用Codable
 5. **iOS缓存**: 任何数据操作都必须考虑缓存同步
 6. **架构**: iOS使用MVVM架构，ViewModel负责业务逻辑
+7. **编译验证**: 修改 Swift 代码后必须立即编译验证
+
+---
+
+## 项目关键路径
+
+| 路径 | 说明 |
+|------|------|
+| `iOS/AIDiary/AIDiary/` | iOS SwiftUI 代码 |
+| `backend/app/api/` | FastAPI 路由 |
+| `backend/app/db/database.py` | SQLAlchemy 模型 |
+| `backend/app/services/ai/` | AI 服务（LLM调用、Prompt、安全过滤） |
+| `iOS/AIDiary/AIDiary/Cache/` | SwiftData 缓存模型 |
