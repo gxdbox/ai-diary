@@ -2,11 +2,25 @@ import SwiftUI
 
 // 单条对话消息
 struct ChatMessage: Identifiable, Equatable {
-    let id = UUID()
-    let role: String  // "user" 或 "assistant"
+    let id: UUID
+    let role: String
     let content: String
     var memoryIds: [Int] = []
     var feedbackGiven: Bool? = nil
+
+    init(
+        id: UUID = UUID(),
+        role: String,
+        content: String,
+        memoryIds: [Int] = [],
+        feedbackGiven: Bool? = nil
+    ) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.memoryIds = memoryIds
+        self.feedbackGiven = feedbackGiven
+    }
 
     static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
         lhs.id == rhs.id

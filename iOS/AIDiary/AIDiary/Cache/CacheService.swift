@@ -12,7 +12,9 @@ actor CacheService {
         do {
             let schema = Schema([
                 CachedDiary.self,
-                CachedStats.self
+                CachedStats.self,
+                CachedConversation.self,
+                CachedMessage.self
             ])
             let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
             modelContainer = try ModelContainer(for: schema, configurations: [configuration])
@@ -194,6 +196,92 @@ actor CacheService {
 
         try? context.delete(model: CachedDiary.self)
         try? context.delete(model: CachedStats.self)
+        try? context.delete(model: CachedConversation.self)
+        try? context.delete(model: CachedMessage.self)
         try? context.save()
+    }
+
+    // MARK: - Conversation Cache
+
+    func saveConversation(messages: [ChatMessage], conversationId: UUID?) async -> UUID {
+        guard let container = modelContainer else { return UUID() }
+        let context = ModelContext(container)
+
+        let id = conversationId ?? UUID()
+
+        if let existingId = conversationId {
+            let descriptor = FetchDescriptor<CachedConversation>(predicate: #Predicate { $0.id == existingId })
+            if let existing = try? context.fetch(descriptor).first {
+                for msg in existing.messages {
+                    context.delete(msg)
+                }
+                existing.messages = []
+                existing.updatedAt = Date()
+
+                for chatMsg in messages {
+                    let cachedMsg = CachedMessage(
+                        id: chatMsg.id,
+                        role: chatMsg.role,
+                        content: chatMsg.content,
+                        memoryIds: chatMsg.memoryIds,
+                        feedbackGiven: chatMsg.feedbackGiven
+                    )
+                    cachedMsg.conversation = existing
+                    context.insert(cachedMsg)
+                }
+                try? context.save()
+                return id
+            }
+        }
+
+        let title = messages.first?.content.prefix(50) ?? "新对话"
+        let conversation = CachedConversation(id: id, title: String(title))
+
+        for chatMsg in messages {
+            let cachedMsg = CachedMessage(
+                id: chatMsg.id,
+                role: chatMsg.role,
+                content: chatMsg.content,
+                memoryIds: chatMsg.memoryIds,
+                feedbackGiven: chatMsg.feedbackGiven
+            )
+            cachedMsg.conversation = conversation
+            context.insert(cachedMsg)
+        }
+
+        context.insert(conversation)
+        try? context.save()
+        return id
+    }
+
+    func getAllConversations() async -> [CachedConversation] {
+        guard let container = modelContainer else { return [] }
+        let context = ModelContext(container)
+
+        let descriptor = FetchDescriptor<CachedConversation>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+        guard let conversations = try? context.fetch(descriptor) else { return [] }
+
+        return conversations
+    }
+
+    func getConversation(id: UUID) async -> CachedConversation? {
+        guard let container = modelContainer else { return nil }
+        let context = ModelContext(container)
+
+        let descriptor = FetchDescriptor<CachedConversation>(predicate: #Predicate { $0.id == id })
+        guard let conversation = try? context.fetch(descriptor).first else { return nil }
+
+        return conversation
+    }
+
+    func deleteConversation(id: UUID) async {
+        guard let container = modelContainer else { return }
+        let context = ModelContext(container)
+
+        let descriptor = FetchDescriptor<CachedConversation>(predicate: #Predicate { $0.id == id })
+        if let conversation = try? context.fetch(descriptor).first {
+            context.delete(conversation)
+            try? context.save()
+        }
     }
 }
