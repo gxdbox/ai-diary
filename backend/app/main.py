@@ -7,7 +7,7 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import diary, analysis, search, dictionary, assistant
+from app.api import diary, analysis, search, dictionary, assistant, companion
 from app.db.database import init_db, async_session_maker
 
 app = FastAPI(
@@ -31,6 +31,7 @@ app.include_router(analysis.router, prefix="/api/analysis", tags=["分析"])
 app.include_router(search.router, prefix="/api/search", tags=["搜索"])
 app.include_router(dictionary.router, prefix="/api/dictionary", tags=["词典"])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["智能助手"])
+app.include_router(companion.router, prefix="/api/companion", tags=["情感陪伴"])
 
 
 @app.on_event("startup")

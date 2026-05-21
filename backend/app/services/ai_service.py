@@ -1,143 +1,38 @@
 """
-DeepSeek AI服务 (OpenAI兼容API)
-"""
-import httpx
-import json
-import os
-from typing import Dict, List, Optional
-import logging
-import asyncio
+AI 服务 - 业务层
 
+底层 LLM 调用委托给 services/ai/client.py (LLMClient)
+本模块保留日记相关的 AI 业务方法
+"""
+import json
+import asyncio
+import logging
+from typing import Dict, List
+
+from app.services.ai.client import llm
 from app.data.emotions import EMOTION_VOCABULARY, EMOTION_DIMENSIONS
-from app.api.dictionary import apply_dictionary_correction
 
 logger = logging.getLogger(__name__)
 
-# DeepSeek API配置
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEEPSEEK_MODEL = "deepseek-chat"
-
 
 class AIService:
-    """DeepSeek AI服务封装"""
-
-    def __init__(self):
-        self.api_key = DEEPSEEK_API_KEY
-        self.base_url = DEEPSEEK_BASE_URL
-        self.model = DEEPSEEK_MODEL
+    """AI 服务 - 日记分析业务方法"""
 
     async def call_llm(self, prompt: str, max_tokens: int = 2000) -> str:
         """调用大语言模型（简单文本模式）"""
-        if not self.api_key:
-            logger.warning("未配置API Key，使用模拟响应")
-            return self._mock_response(prompt)
-
-        try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {"role": "user", "content": prompt}
-                        ],
-                        "max_tokens": max_tokens,
-                        "temperature": 0.7,
-                        "top_p": 0.9
-                    }
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    return data["choices"][0]["message"]["content"]
-                else:
-                    logger.error(f"AI调用失败: {response.status_code} - {response.text}")
-                    raise Exception(f"AI调用失败: {response.text}")
-
-        except Exception as e:
-            logger.error(f"AI服务异常: {str(e)}")
-            return self._mock_response(prompt)
+        return await llm.simple_chat(prompt, max_tokens=max_tokens)
 
     async def call_llm_with_messages(
-        self,
-        messages: List[Dict],
-        max_tokens: int = 2000
+        self, messages: List[Dict], max_tokens: int = 2000
     ) -> str:
-        """
-        调用大语言模型（消息列表模式）
-
-        支持完整的对话历史和系统提示词
-        适用于上下文管理场景
-        """
-        if not self.api_key:
-            logger.warning("未配置API Key，使用模拟响应")
-            # 从消息中提取用户最后输入
-            user_msg = ""
-            for msg in reversed(messages):
-                if msg.get("role") == "user":
-                    user_msg = msg.get("content", "")
-                    break
-            return self._mock_response(user_msg)
-
-        try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "max_tokens": max_tokens,
-                        "temperature": 0.7,
-                        "top_p": 0.9
-                    }
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    return data["choices"][0]["message"]["content"]
-                else:
-                    logger.error(f"AI调用失败: {response.status_code} - {response.text}")
-                    raise Exception(f"AI调用失败: {response.text}")
-
-        except Exception as e:
-            logger.error(f"AI服务异常: {str(e)}")
-            # 降级处理
-            user_msg = ""
-            for msg in reversed(messages):
-                if msg.get("role") == "user":
-                    user_msg = msg.get("content", "")
-                    break
-            return self._mock_response(user_msg)
-
-    def _mock_response(self, prompt: str) -> str:
-        """模拟响应（用于测试）"""
-        if "清洗" in prompt or "删除口语填充词" in prompt:
-            return "今天天气不错，我想出去走走。周末约朋友吃饭吧。"
-        elif "情绪" in prompt and "JSON" in prompt:
-            return '{"emotion": "高兴", "secondary_emotions": ["期待"], "energy": 6, "intensity": 6, "keywords": ["不错", "约朋友"], "confidence": 0.85}'
-        elif "主题" in prompt or "标签" in prompt:
-            return "生活,社交"
-        elif "关键事件" in prompt:
-            return "约朋友吃饭"
-        else:
-            return "这是一个模拟响应。"
+        """调用大语言模型（消息列表模式）"""
+        return await llm.chat(messages, max_tokens=max_tokens)
 
     async def clean_text(self, raw_text: str) -> str:
         """清洗语音转写文本"""
-
-        # 1. 先应用词典校正
+        from app.api.dictionary import apply_dictionary_correction
         corrected_text = apply_dictionary_correction(raw_text)
 
-        # 2. AI 清洗
         prompt = f"""你是一个专业的文本编辑助手。请清洗以下语音转文字的日记内容：
 
 1. 删除口语填充词（嗯、啊、哈、那个、就是、然后呢、这个等）
@@ -156,7 +51,6 @@ class AIService:
 
     async def analyze_emotion(self, text: str) -> Dict:
         """分析文本情绪 - 使用能量值+强度双维度体系"""
-
         emotion_groups = {
             "积极情绪": ["幸福", "快乐", "欣喜", "欢快", "高兴", "满足", "感恩", "自豪", "期待", "激动", "狂喜", "温情", "自信", "欣慰", "无忧无虑", "如释重负", "归家之喜", "温馨", "冷静"],
             "消极情绪": ["愤怒", "焦虑", "悲伤", "恐惧", "绝望", "沮丧", "忧郁", "孤独", "内疚", "羞耻", "懊悔", "遗憾", "愤恨", "嫉妒", "不满", "气恼", "困惑", "震惊", "恐慌", "厌倦", "冷漠", "气馁", "失望", "厌恶", "惧怕", "尴尬", "仇恨", "不堪重负", "烦躁", "担忧"],
@@ -230,7 +124,7 @@ class AIService:
                 "energy": energy,
                 "intensity": intensity,
                 "keywords": parsed.get("keywords", [])[:5],
-                "confidence": float(parsed.get("confidence", 0.8))
+                "confidence": float(parsed.get("confidence", 0.8)),
             }
         except json.JSONDecodeError:
             logger.warning(f"JSON解析失败: {result}")
@@ -240,12 +134,11 @@ class AIService:
                 "energy": 0.0,
                 "intensity": 5.0,
                 "keywords": [],
-                "confidence": 0.5
+                "confidence": 0.5,
             }
 
     def _validate_emotion(self, emotion: str) -> str:
         """验证情绪词是否在词汇表中，否则映射到最接近的"""
-        # 常见情绪映射表
         mapping = {
             "开心": "高兴",
             "难过": "悲伤",
@@ -269,7 +162,6 @@ class AIService:
 
     async def extract_topics(self, text: str) -> List[str]:
         """提取文本主题标签"""
-
         prompt = f"""请为以下日记内容提取主题标签。
 
 日记内容：
@@ -285,7 +177,6 @@ class AIService:
 
     async def extract_key_events(self, text: str) -> List[str]:
         """提取关键事件"""
-
         prompt = f"""请从以下日记内容中提取关键事件或重要信息。
 
 日记内容：
@@ -300,24 +191,16 @@ class AIService:
         return events[:3]
 
     async def full_analysis(self, text: str) -> Dict:
-        """完整分析：情绪、主题、事件 - 并行执行提高效率"""
-
-        # 并行执行三项分析（asyncio.gather 同时发起请求）
+        """完整分析：情绪、主题、事件 - 并行执行"""
         emotion, topics, events = await asyncio.gather(
             self.analyze_emotion(text),
             self.extract_topics(text),
-            self.extract_key_events(text)
+            self.extract_key_events(text),
         )
-
-        return {
-            "emotion": emotion,
-            "topics": topics,
-            "key_events": events
-        }
+        return {"emotion": emotion, "topics": topics, "key_events": events}
 
     async def answer_question(self, question: str, context: str) -> str:
         """基于上下文回答问题（RAG）"""
-
         prompt = f"""你是一个智能日记助手。请根据用户的日记内容回答问题。
 
 相关日记内容：
@@ -330,5 +213,4 @@ class AIService:
         return await self.call_llm(prompt)
 
 
-# 全局AI服务实例
 ai_service = AIService()

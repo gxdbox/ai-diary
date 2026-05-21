@@ -2,13 +2,17 @@
 
 ## Project Overview
 
-AI智能日记 App - React Native + FastAPI 智能语音日记应用
+AI智能日记 App - iOS (SwiftUI) + FastAPI 智能语音日记应用
 
 **Structure:**
 ```
 ai_diary/
 ├── backend/           # FastAPI 后端 (Python 3.9+)
-├── mobile/            # React Native 前端 (Node 18+)
+├── iOS/               # iOS 原生前端 (SwiftUI)
+│   └── AIDiary/       # Xcode项目
+│       ├── AIDiary/   # 应用代码
+│       ├── AIDiaryTests/      # 单元测试
+│       └── AIDiaryUITests/    # UI测试
 └── docs/              # 文档
 ```
 
@@ -38,23 +42,22 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 # 访问 API 文档：http://localhost:8000/docs
 ```
 
-### Mobile (React Native)
+### iOS (SwiftUI)
 
 ```bash
-cd mobile
+cd iOS
 
-# 安装依赖
-npm install
+# 打开Xcode项目
+open AIDiary.xcodeproj
 
-# iOS (需要 Xcode)
-cd ios && pod install && cd ..
-npm run ios
+# 或使用Xcode打开
+# File -> Open -> 选择 iOS/AIDiary.xcodeproj
 
-# Android
-npm run android
+# 运行模拟器
+# 在Xcode中选择目标设备，点击运行按钮（Cmd+R）
 
-# 启动 Metro Bundler
-npm start
+# 运行测试
+xcodebuild test -scheme AIDiary -destination 'platform=iOS Simulator,name=iPhone 15'
 ```
 
 ---
@@ -80,19 +83,19 @@ pytest tests/test_api.py::test_health_check -v
 pytest -v -s
 ```
 
-### Mobile Tests (Jest)
+### iOS Tests (XCTest)
 
 ```bash
-cd mobile
+cd iOS
 
-# 运行测试
-npm test
+# 运行所有测试
+xcodebuild test -scheme AIDiary -destination 'platform=iOS Simulator,name=iPhone 15'
 
-# 运行单个测试文件
-npm test -- --testPathPattern=App.test.tsx
+# 运行单元测试
+xcodebuild test -scheme AIDiary -destination 'platform=iOS Simulator,name=iPhone 15' -only-testing:AIDiaryTests
 
-# 监听模式
-npm test -- --watch
+# 运行UI测试
+xcodebuild test -scheme AIDiary -destination 'platform=iOS Simulator,name=iPhone 15' -only-testing:AIDiaryUITests
 ```
 
 ---
@@ -108,16 +111,16 @@ ruff check backend/app
 black --check backend/app
 ```
 
-### Mobile
+### iOS
 
 ```bash
-cd mobile
+cd iOS
 
-# Lint
-npm run lint
+# Swiftlint检查（如果已安装）
+swiftlint
 
-# TypeScript 检查
-npx tsc --noEmit
+# 安装Swiftlint（如果未安装）
+brew install swiftlint
 ```
 
 ---
@@ -160,43 +163,72 @@ except DashScopeError as e:
 
 ---
 
-### TypeScript (Mobile)
+### Swift (iOS)
 
 **Imports:**
-```typescript
-// 顺序：React → 第三方库 → 本地模块 (带 @/ 别名)
-import React from 'react';
-import { View } from 'react-native';
-import { DiaryCard } from '@/components/DiaryCard';
+```swift
+// 顺序：系统框架 → 第三方库 → 本地模块
+import SwiftUI
+import Foundation
+// 第三方库
+// 本地模块
 ```
 
 **Naming:**
-- 文件/组件：`PascalCase.tsx`
+- 文件/组件：`PascalCase.swift`
 - 函数/变量：`camelCase`
-- 类型/接口：`PascalCase`
-- 常量：`UPPER_CASE`
+- 类型/协议：`PascalCase`
+- 常量：`camelCase`（Swift推荐）
 
 **Types:**
-```typescript
-// 优先使用 interface 定义对象类型
-interface Diary {
-  id: string;
-  content: string;
-  emotion: EmotionType;
+```swift
+// 使用 struct 定义数据模型
+struct Diary: Codable, Identifiable {
+    let id: String
+    let content: String
+    let emotion: EmotionType
+    let createdAt: Date
 }
 
-// 使用 type 做联合类型
-type EmotionType = 'positive' | 'negative' | 'neutral';
+// 使用 enum 定义枚举
+enum EmotionType: String, Codable {
+    case positive = "positive"
+    case negative = "negative"
+    case neutral = "neutral"
+}
 ```
 
 **Error Handling:**
-```typescript
-try {
-  const response = await apiService.createDiary(content);
-} catch (error) {
-  if (error instanceof AxiosError) {
-    console.error('API 错误:', error.message);
-  }
+```swift
+do {
+    let response = try await apiService.createDiary(content)
+} catch {
+    print("API错误: \(error.localizedDescription)")
+}
+```
+
+**MVVM Architecture:**
+```swift
+// Model: 数据模型
+struct Diary { ... }
+
+// ViewModel: 业务逻辑
+@MainActor
+class DiaryViewModel: ObservableObject {
+    @Published var diaries: [Diary] = []
+    
+    func loadDiaries() async {
+        // 业务逻辑
+    }
+}
+
+// View: UI层
+struct DiaryListView: View {
+    @StateObject private var viewModel = DiaryViewModel()
+    
+    var body: some View {
+        // UI代码
+    }
 }
 ```
 
@@ -280,9 +312,10 @@ CHROMA_PERSIST_DIR=./chroma_data
 DEBUG=true
 ```
 
-### Mobile
-- API 地址硬编码在 `src/services/apiService.ts`
+### iOS
+- API 地址配置在 `Services/APIService.swift`
 - 默认：`http://localhost:8000`
+- 生产环境需修改为实际服务器地址
 
 ---
 
@@ -293,15 +326,15 @@ DEBUG=true
    - 测试：`pytest tests/test_api.py::test_function_name -v`
    - API 文档：http://localhost:8000/docs
 
-2. **前端开发**:
-   - Metro Bundler 自动重载
+2. **iOS开发**:
+   - Xcode自动重载（Cmd+R）
    - 模拟器热更新
-   - 类型检查：`npx tsc --noEmit`
+   - 使用预览功能快速调试（Canvas）
 
 3. **提交前检查**:
    - 后端测试通过
-   - 前端 lint 通过
-   - TypeScript 无错误
+   - iOS编译无错误
+   - Swiftlint检查通过
 
 ---
 
@@ -314,11 +347,12 @@ DEBUG=true
 3. 编写测试用例
 4. 更新 API 文档
 
-### 添加新的移动端页面
+### 添加新的iOS页面
 
-1. 在 `mobile/src/screens/` 创建组件
-2. 在 `mobile/src/App.tsx` 添加路由
-3. 在 `mobile/src/screens/index.ts` 导出
+1. 在 `iOS/AIDiary/AIDiary/Screens/` 创建SwiftUI视图
+2. 在 `ContentView.swift` 或相应导航逻辑中添加路由
+3. 如需要，在 `ViewModels/` 创建对应的ViewModel
+4. 在 `Models/` 定义数据模型（如果需要新模型）
 
 ### 修改 AI 服务逻辑
 
@@ -331,7 +365,8 @@ DEBUG=true
 ## Debugging Tips
 
 - **后端**: 使用 `--reload` 自动重载，查看 uvicorn 日志
-- **前端**: 使用 React Native Debugger 或 Flipper
+- **iOS**: 使用Xcode内置调试器、LLDB、View Hierarchy
+- **网络**: 使用Charles或Proxyman抓包
 - **数据库**: `backend/ai_diary.db` 是 SQLite 文件
 - **向量数据**: `backend/chroma_data/` 存储 ChromaDB 数据
 
@@ -342,4 +377,6 @@ DEBUG=true
 1. **不要提交**: `.env`, `venv/`, `node_modules/`, `*.db`, `__pycache__/`
 2. **API Key**: 永远不要提交 DASHSCOPE_API_KEY 到 Git
 3. **测试**: 每个新功能必须配套测试用例
-4. **类型**: 后端必须用 Pydantic，前端必须用 TypeScript
+4. **类型**: 后端必须用 Pydantic，iOS必须用Codable
+5. **iOS缓存**: 任何数据操作都必须考虑缓存同步
+6. **架构**: iOS使用MVVM架构，ViewModel负责业务逻辑

@@ -1,7 +1,7 @@
 """
-Prompts 模块
+Prompts 模块 - 从 services/ai/prompts/ 重新导出以保持向后兼容
 """
-from app.prompts.diary_prompts import (
+from app.services.ai.prompts.diary import (
     DIARY_COMPANION_SYSTEM,
     CONTEXT_TEMPLATE,
     format_user_profile,
@@ -12,19 +12,19 @@ from app.prompts.diary_prompts import (
     build_messages_prompt,
     JOY_RESPONSE_HINTS,
     CONCERN_RESPONSE_HINTS,
-    AVOID_TOPIC_HINTS
+    AVOID_TOPIC_HINTS,
 )
 
 __all__ = [
-    'DIARY_COMPANION_SYSTEM',
-    'CONTEXT_TEMPLATE',
-    'format_user_profile',
-    'format_memories_implicit',
-    'format_memories_explicit',
-    'format_conversation_history',
-    'build_diary_prompt',
-    'build_messages_prompt',
-    'JOY_RESPONSE_HINTS',
-    'CONCERN_RESPONSE_HINTS',
-    'AVOID_TOPIC_HINTS'
+    "DIARY_COMPANION_SYSTEM",
+    "CONTEXT_TEMPLATE",
+    "format_user_profile",
+    "format_memories_implicit",
+    "format_memories_explicit",
+    "format_conversation_history",
+    "build_diary_prompt",
+    "build_messages_prompt",
+    "JOY_RESPONSE_HINTS",
+    "CONCERN_RESPONSE_HINTS",
+    "AVOID_TOPIC_HINTS",
 ]

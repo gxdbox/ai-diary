@@ -6,7 +6,6 @@ from sqlalchemy.orm import declarative_base, Session
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime, create_engine
 from datetime import datetime
 import os
-import json
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./ai_diary.db")
 SYNC_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ai_diary.db").replace("+aiosqlite", "")
@@ -53,6 +52,21 @@ class DictionaryEntry(Base):
     pinyin = Column(String(200), nullable=False, comment="拼音（用于同音词匹配）")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+
+
+class Conversation(Base):
+    """对话记录表 - 统一存储 companion 和 assistant 的对话"""
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, default=1, comment="用户 ID")
+    diary_id = Column(Integer, nullable=True, comment="关联的日记 ID")
+    user_input = Column(Text, nullable=False, comment="用户输入")
+    ai_response = Column(Text, nullable=False, comment="AI 回复")
+    mode = Column(String(20), default="companion", comment="对话模式: companion/assistant")
+    emotion_before = Column(String(50), nullable=True, comment="对话前情绪")
+    emotion_after = Column(String(50), nullable=True, comment="对话后情绪")
+    created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
 
 
 async def init_db():
