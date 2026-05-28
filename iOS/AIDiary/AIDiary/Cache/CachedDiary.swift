@@ -25,8 +25,9 @@ class CachedDiary {
     var createdAt: Date
     var updatedAt: Date
     var cachedAt: Date
+    var audioURL: String?
 
-    init(id: Int, rawText: String, cleanedText: String?, emotion: String?, emotionScore: Double?, emotionEnergy: Double?, emotionIntensity: Double?, emotionKeywords: [String]?, secondaryEmotions: [String]?, emotionDimension: String?, emotionConfidence: Double?, topics: [String]?, keyEvents: [String]?, recordingDuration: Int?, wordCount: Int, weather: Weather?, createdAt: Date, updatedAt: Date) {
+    init(id: Int, rawText: String, cleanedText: String?, emotion: String?, emotionScore: Double?, emotionEnergy: Double?, emotionIntensity: Double?, emotionKeywords: [String]?, secondaryEmotions: [String]?, emotionDimension: String?, emotionConfidence: Double?, topics: [String]?, keyEvents: [String]?, recordingDuration: Int?, wordCount: Int, weather: Weather?, createdAt: Date, updatedAt: Date, audioURL: String? = nil) {
         self.id = id
         self.rawText = rawText
         self.cleanedText = cleanedText
@@ -48,6 +49,7 @@ class CachedDiary {
             self.weatherIcon = w.weatherIcon
             self.weatherLocation = w.location
         }
+        self.audioURL = audioURL
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.cachedAt = Date()
@@ -78,6 +80,7 @@ class CachedDiary {
             recordingDuration: recordingDuration,
             wordCount: wordCount,
             weather: weather,
+            audioURL: audioURL,
             createdAt: createdAt,
             updatedAt: updatedAt
         )

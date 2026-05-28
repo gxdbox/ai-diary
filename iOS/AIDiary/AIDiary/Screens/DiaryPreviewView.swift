@@ -176,6 +176,16 @@ struct DiaryPreviewView: View {
             Text("共 \(diary.wordCount) 字")
                 .font(.system(size: 12))
                 .foregroundColor(Color(hex: "9C9B99"))
+
+            if diary.audioURL != nil {
+                HStack(spacing: 4) {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 11))
+                    Text("已保存录音")
+                        .font(.system(size: 12))
+                }
+                .foregroundColor(Color(hex: "C4935A"))
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -420,6 +430,7 @@ struct DiaryPreviewView: View {
             recordingDuration: 60,
             wordCount: 20,
             weather: Weather(temperature: 26, weather: "晴", weatherIcon: "100", location: "北京"),
+            audioURL: nil,
             createdAt: Date(),
             updatedAt: Date()
         )

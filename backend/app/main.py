@@ -2,13 +2,19 @@
 AI智能日记App - FastAPI后端
 """
 # 首先加载环境变量
+import os
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
+
+# 从项目根目录加载 .env（main.py 在 app/ 子目录下）
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(env_path)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import diary, analysis, search, dictionary, assistant, companion
 from app.db.database import init_db, async_session_maker
+from app.services.oss_service import oss_service
 
 app = FastAPI(
     title="AI日记API",

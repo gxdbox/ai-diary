@@ -1,4 +1,16 @@
 import SwiftUI
+import AVFoundation
+import OSLog
+
+// AVAudioPlayerDelegate 包装类（SwiftUI struct 无法直接遵循）
+final class AudioPlayerDelegate: NSObject, AVAudioPlayerDelegate {
+    var onFinish: (() -> Void)?
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        onFinish?()
+    }
+}
+
+private let audioLogger = Logger(subsystem: "com.aidiary.diary", category: "AudioPlayback")
 
 struct DiaryDetailView: View {
     let diary: Diary  // 传入的原始日记
@@ -12,6 +24,11 @@ struct DiaryDetailView: View {
     @State private var isSavingEdit = false
     @State private var showCopySuccess = false
     @State private var currentDiary: Diary?  // 当前显示的日记（可能被更新）
+    @State private var isPlayingAudio = false
+    @State private var isLoadingAudio = false
+    @State private var audioPlayer: AVAudioPlayer?
+    @State private var audioPlayerDelegate: AudioPlayerDelegate?
+    @State private var audioError: String?
     
     var body: some View {
         ScrollView {
@@ -31,6 +48,13 @@ struct DiaryDetailView: View {
         .navigationBarBackButtonHidden(true)
         .onAppear {
             currentDiary = diary
+        }
+        .onDisappear {
+            audioPlayer?.stop()
+            audioPlayer = nil
+            audioPlayerDelegate = nil
+            isPlayingAudio = false
+            isLoadingAudio = false
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -104,6 +128,14 @@ struct DiaryDetailView: View {
                 }
             }
         )
+        .alert("播放失败", isPresented: Binding(
+            get: { audioError != nil },
+            set: { if !$0 { audioError = nil } }
+        )) {
+            Button("确定", role: .cancel) {}
+        } message: {
+            Text(audioError ?? "未知错误")
+        }
     }
     
     private var displayDiary: Diary {
@@ -143,6 +175,11 @@ struct DiaryDetailView: View {
                 Text("\(displayDiary.wordCount)字")
                     .font(.system(size: 14))
                     .foregroundColor(Color(hex: "6D6C6A"))
+            }
+
+            // 音频播放按钮
+            if displayDiary.audioURL != nil {
+                audioPlayButton
             }
 
             if let emotion = displayDiary.emotion {
@@ -416,6 +453,125 @@ struct DiaryDetailView: View {
         }
     }
 
+    // MARK: - Audio Playback
+
+    private var audioPlayButton: some View {
+        Button {
+            audioLogger.info("▶️ 按钮被点击, isPlayingAudio=\(self.isPlayingAudio), isLoadingAudio=\(self.isLoadingAudio)")
+            playAudio()
+        } label: {
+            HStack(spacing: 6) {
+                if isLoadingAudio {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: isPlayingAudio ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 18))
+                }
+                Text(isLoadingAudio ? "加载中..." : (isPlayingAudio ? "暂停播放" : "播放录音"))
+                    .font(.system(size: 13))
+            }
+            .foregroundColor(Color(hex: "C4935A"))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color(hex: "F5F0EA"))
+            .cornerRadius(8)
+        }
+        .disabled(isLoadingAudio)
+    }
+
+    private func playAudio() {
+        // 如果已在播放，则暂停
+        if isPlayingAudio, let player = audioPlayer, player.isPlaying {
+            player.pause()
+            isPlayingAudio = false
+            return
+        }
+
+        // 如果已暂停，则恢复播放
+        if let player = audioPlayer, !player.isPlaying {
+            player.play()
+            isPlayingAudio = true
+            return
+        }
+
+        // 防止重复下载
+        guard !isLoadingAudio else {
+            return
+        }
+
+        audioLogger.info("📥 开始下载, diaryId=\(self.displayDiary.id)")
+        isLoadingAudio = true
+
+        Task {
+            do {
+                let signedURL = try await APIService.shared.getAudioURL(diaryId: displayDiary.id)
+                audioLogger.info("📡 签名URL获取成功")
+
+                // 下载音频到内存
+                let (data, _) = try await URLSession.shared.data(from: signedURL)
+                audioLogger.info("💾 下载完成: \(data.count) bytes")
+
+                // 保存到临时文件（AVAudioplayer(contentsOf:) 比 init(data:) 更可靠）
+                let tempDir = FileManager.default.temporaryDirectory
+                let tempURL = tempDir.appendingPathComponent("playback_\(UUID().uuidString).m4a")
+                try data.write(to: tempURL)
+                audioLogger.info("📁 临时文件已创建")
+
+                await MainActor.run {
+                    // 配置音频会话
+                    let session = AVAudioSession.sharedInstance()
+                    do {
+                        try session.setCategory(.playback, mode: .default)
+                        try session.setActive(true)
+                        audioLogger.info("🔊 会话配置成功: \(session.category.rawValue)")
+                    } catch {
+                        audioLogger.error("🔊 会话失败: \(error.localizedDescription)")
+                        audioError = "音频配置失败: \(error.localizedDescription)"
+                        isLoadingAudio = false
+                        return
+                    }
+
+                    // 创建 AVAudioPlayer 并播放
+                    do {
+                        let player = try AVAudioPlayer(contentsOf: tempURL)
+                        player.volume = 1.0
+                        audioLogger.info("✅ 播放器创建成功, duration=\(player.duration)")
+
+                        let delegate = AudioPlayerDelegate()
+                        delegate.onFinish = {
+                            audioLogger.info("🏁 播放完成")
+                            isPlayingAudio = false
+                        }
+                        player.delegate = delegate
+
+                        let prepared = player.prepareToPlay()
+                        audioLogger.info("🔧 prepareToPlay: \(prepared)")
+
+                        audioPlayer?.stop()
+                        audioPlayerDelegate = delegate
+                        self.audioPlayer = player
+
+                        let started = player.play()
+                        audioLogger.info("🎵 play() 返回: \(started), isPlaying: \(player.isPlaying)")
+                        isPlayingAudio = true
+                        isLoadingAudio = false
+                    } catch {
+                        audioLogger.error("❌ AVAudioPlayer 创建失败: \(error.localizedDescription)")
+                        audioError = "音频播放失败: \(error.localizedDescription)"
+                        isLoadingAudio = false
+                    }
+                }
+            } catch {
+                audioLogger.error("❌ 下载/文件写入失败: \(error.localizedDescription)")
+                await MainActor.run {
+                    audioError = "获取音频失败: \(error.localizedDescription)"
+                    isLoadingAudio = false
+                }
+            }
+        }
+    }
+
     private func deleteDiary() {
         isDeleting = true
         Task {
@@ -489,6 +645,7 @@ struct DiaryDetailView: View {
                 recordingDuration: 120,
                 wordCount: 50,
                 weather: Weather(temperature: 26, weather: "晴", weatherIcon: "100", location: "北京"),
+                audioURL: nil,
                 createdAt: Date(),
                 updatedAt: Date()
             )

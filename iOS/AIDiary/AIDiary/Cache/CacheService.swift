@@ -47,7 +47,8 @@ actor CacheService {
                 wordCount: diary.wordCount,
                 weather: diary.weather,
                 createdAt: diary.createdAt,
-                updatedAt: diary.updatedAt
+                updatedAt: diary.updatedAt,
+                audioURL: diary.audioURL
             )
             context.insert(cachedDiary)
         }
@@ -89,6 +90,7 @@ actor CacheService {
             existing.createdAt = diary.createdAt
             existing.updatedAt = diary.updatedAt
             existing.cachedAt = Date()
+            existing.audioURL = diary.audioURL
         } else {
             let cachedDiary = CachedDiary(
                 id: diary.id,
@@ -108,7 +110,8 @@ actor CacheService {
                 wordCount: diary.wordCount,
                 weather: diary.weather,
                 createdAt: diary.createdAt,
-                updatedAt: diary.updatedAt
+                updatedAt: diary.updatedAt,
+                audioURL: diary.audioURL
             )
             context.insert(cachedDiary)
         }

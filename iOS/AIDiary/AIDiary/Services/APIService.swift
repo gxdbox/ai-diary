@@ -111,6 +111,50 @@ class APIService {
         let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)
     }
+
+    // MARK: - 音频
+
+    func uploadAudio(diaryId: Int, audioFileURL: URL) async throws -> Diary {
+        let url = URL(string: "\(baseURL)/api/diary/\(diaryId)/audio")!
+        let boundary = UUID().uuidString
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        let audioData = try Data(contentsOf: audioFileURL)
+        let fileName = audioFileURL.lastPathComponent
+
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"audio_file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/mp4\r\n\r\n".data(using: .utf8)!)
+        body.append(audioData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try decode(data)
+    }
+
+    func getAudioURL(diaryId: Int) async throws -> URL {
+        let url = URL(string: "\(baseURL)/api/diary/\(diaryId)/audio-url")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+
+        struct AudioURLResponse: Codable {
+            let audioURL: String
+            enum CodingKeys: String, CodingKey {
+                case audioURL = "audio_url"
+            }
+        }
+
+        let response = try JSONDecoder().decode(AudioURLResponse.self, from: data)
+        guard let signedURL = URL(string: response.audioURL) else {
+            throw URLError(.badURL)
+        }
+        return signedURL
+    }
     
     func semanticSearch(query: String) async throws -> SearchResponse {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/search/semantic")!)

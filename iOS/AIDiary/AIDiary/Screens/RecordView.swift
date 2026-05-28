@@ -9,6 +9,7 @@ struct RecordView: View {
     @State private var showPreview = false
     @State private var currentDiary: Diary?
     @State private var showPermissionAlert = false
+    @State private var errorMessage: String?
 
     var body: some View {
         ZStack {
@@ -52,6 +53,14 @@ struct RecordView: View {
             }
         } message: {
             Text("请在设置中允许访问麦克风以使用录音功能")
+        }
+        .alert("提示", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("确定", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
         }
         .onAppear {
             checkPermission()
@@ -229,22 +238,36 @@ struct RecordView: View {
 
     private func finishRecording() {
         let text = speechService.stopRecording()
+        let audioURL = speechService.getRecordedAudioURL()
 
         guard !text.isEmpty else {
+            errorMessage = "未检测到语音内容，请重新录音"
             return
         }
 
-        saveDiary(text: text)
+        saveDiary(text: text, audioURL: audioURL)
     }
 
-    private func saveDiary(text: String) {
+    private func saveDiary(text: String, audioURL: URL?) {
         isProcessing = true
         Task {
             do {
-                let diary = try await APIService.shared.createDiary(
+                var diary = try await APIService.shared.createDiary(
                     rawText: text,
                     recordingDuration: speechService.recordingDuration
                 )
+
+                // 上传音频文件（如果存在）
+                if let audioFileURL = audioURL {
+                    do {
+                        diary = try await APIService.shared.uploadAudio(diaryId: diary.id, audioFileURL: audioFileURL)
+                        // 清理临时音频文件
+                        try? FileManager.default.removeItem(at: audioFileURL)
+                    } catch {
+                        print("音频上传失败: \(error)")
+                    }
+                }
+
                 // 立即保存到缓存（自动保存，用户关闭也不会丢失）
                 await CacheService.shared.saveDiary(diary)
 
@@ -259,6 +282,8 @@ struct RecordView: View {
             } catch {
                 await MainActor.run {
                     isProcessing = false
+                    errorMessage = "保存失败，请检查网络后重试"
+                    speechService.reset()
                 }
             }
         }

@@ -17,6 +17,7 @@ struct Diary: Codable, Identifiable, Hashable {
     let recordingDuration: Int?
     let wordCount: Int
     let weather: Weather?
+    let audioURL: String?
     let createdAt: Date
     let updatedAt: Date
 
@@ -53,6 +54,7 @@ struct Diary: Codable, Identifiable, Hashable {
         case recordingDuration = "recording_duration"
         case wordCount = "word_count"
         case weather
+        case audioURL = "audio_url"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
