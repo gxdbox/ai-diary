@@ -3,7 +3,7 @@
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, Session
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, create_engine
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, create_engine, text as sa_text
 from datetime import datetime
 import os
 
@@ -39,6 +39,7 @@ class Diary(Base):
     recording_duration = Column(Integer, nullable=True, comment="录音时长(秒)")
     word_count = Column(Integer, default=0, comment="字数")
     weather = Column(Text, nullable=True, comment="天气信息JSON")
+    images = Column(Text, nullable=True, comment="图片OSS key列表JSON")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
@@ -73,6 +74,20 @@ async def init_db():
     """初始化数据库表"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 安全迁移：为旧数据库添加 images 列
+        try:
+            def add_images_column(connection):
+                result = connection.execute(
+                    sa_text("PRAGMA table_info(diaries)")
+                )
+                columns = [row[1] for row in result]
+                if "images" not in columns:
+                    connection.execute(
+                        sa_text("ALTER TABLE diaries ADD COLUMN images TEXT")
+                    )
+            await conn.run_sync(add_images_column)
+        except Exception as e:
+            print(f"[DB Migration] images column migration: {e}")
 
 
 async def get_db():

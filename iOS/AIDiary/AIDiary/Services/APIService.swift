@@ -276,6 +276,54 @@ class APIService {
             throw URLError(.badServerResponse)
         }
     }
+
+    // ============ 图片相关 API ============
+
+    func uploadImage(diaryId: Int, imageData: Data, fileName: String) async throws -> ImageUploadResponse {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/images/upload")!)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        // diary_id 字段
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"diary_id\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(diaryId)\r\n".data(using: .utf8)!)
+        // file 字段
+        let mimeType = fileName.lowercased().hasSuffix(".png") ? "image/png" : "image/jpeg"
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        return try decode(data)
+    }
+
+    func deleteImage(diaryId: Int, imageKey: String) async throws {
+        var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/images")!)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "diary_id": diaryId,
+            "image_key": imageKey
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
 }
 
 private struct InsightsResponse: Codable {

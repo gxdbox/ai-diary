@@ -30,6 +30,7 @@ class DiaryResponse(BaseModel):
     recording_duration: Optional[int] = None
     word_count: int = 0
     weather: Optional[dict] = None
+    images: Optional[List[str]] = []
     created_at: datetime
     updated_at: datetime
 
@@ -114,3 +115,16 @@ class WeatherRequest(BaseModel):
     """天气更新请求"""
     diary_id: int = Field(..., description="日记ID")
     weather: WeatherData = Field(..., description="天气数据")
+
+
+class ImageUploadResponse(BaseModel):
+    """单张图片上传响应"""
+    key: str = Field(..., description="OSS object key")
+    url: str = Field(..., description="签名 URL（1小时有效）")
+    size: int = Field(..., description="文件大小（字节）")
+
+
+class ImageDeleteRequest(BaseModel):
+    """删除图片请求"""
+    diary_id: int = Field(..., description="日记ID")
+    image_key: str = Field(..., description="OSS object key")

@@ -18,6 +18,7 @@ struct Diary: Codable, Identifiable, Hashable {
     let wordCount: Int
     let weather: Weather?
     let audioURL: String?
+    let images: [String]?
     let createdAt: Date
     let updatedAt: Date
 
@@ -55,6 +56,7 @@ struct Diary: Codable, Identifiable, Hashable {
         case wordCount = "word_count"
         case weather
         case audioURL = "audio_url"
+        case images
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -269,4 +271,12 @@ struct DictionaryEntry: Codable, Identifiable {
 struct DictionaryListResponse: Codable {
     let entries: [DictionaryEntry]
     let total: Int
+}
+
+// MARK: - 图片上传
+
+struct ImageUploadResponse: Codable {
+    let key: String  // OSS object key（删除时用）
+    let url: String  // 签名 URL（显示用）
+    let size: Int
 }

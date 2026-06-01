@@ -1,7 +1,7 @@
 """
 日记相关API路由
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, Form, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from typing import List
@@ -13,11 +13,13 @@ import importlib
 from app.db.database import get_db, Diary
 from app.models.diary import (
     DiaryCreate, DiaryResponse, DiaryListResponse,
-    CleanTextRequest, CleanTextResponse, WeatherRequest
+    CleanTextRequest, CleanTextResponse, WeatherRequest,
+    ImageUploadResponse, ImageDeleteRequest
 )
 from app.services.ai_service import ai_service
 from app.services.text_cleaner import text_cleaner
 from app.services.vector_store import vector_store
+from app.services import oss_service
 
 router = APIRouter()
 
@@ -287,6 +289,8 @@ async def delete_diary(
     """
     删除日记
     """
+    # 先读取 oss keys（在 DB 删除前读取）
+    oss_keys = None
     try:
         result = await db.execute(
             select(Diary).where(Diary.id == diary_id)
@@ -296,19 +300,33 @@ async def delete_diary(
         if not diary:
             raise HTTPException(status_code=404, detail="日记不存在")
 
+        # 保存 OSS keys 用于事务外清理
+        if diary.images:
+            try:
+                oss_keys = json.loads(diary.images)
+            except:
+                pass
+
         await db.delete(diary)
         await db.commit()
 
         # 从向量存储删除
         vector_store.delete_diary(diary_id)
 
-        return {"message": "删除成功", "id": diary_id}
-
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"删除日记失败: {str(e)}")
+
+    # OSS 清理在事务外，独立 try/except，不影响删除结果
+    if oss_keys:
+        try:
+            oss_service.batch_delete(oss_keys)
+        except Exception as e:
+            print(f"[OSS] cleanup failed for diary {diary_id}: {e}")
+
+    return {"message": "删除成功", "id": diary_id}
 
 
 @router.put("/{diary_id}", response_model=DiaryResponse)
@@ -370,6 +388,20 @@ async def update_diary(
 
 def _diary_to_response(diary: Diary) -> DiaryResponse:
     """将数据库模型转换为响应模型"""
+    # 将 OSS key 列表转换为签名 URL 列表（安全降级：失败不影响其他字段）
+    image_urls = []
+    if diary.images:
+        try:
+            keys = json.loads(diary.images)
+            for key in keys:
+                try:
+                    image_urls.append(oss_service.sign_url(key))
+                except Exception as e:
+                    print(f"[OSS] sign_url failed for {key}: {e}")
+                    image_urls.append("")
+        except json.JSONDecodeError:
+            pass
+
     return DiaryResponse(
         id=diary.id,
         raw_text=diary.raw_text,
@@ -387,9 +419,123 @@ def _diary_to_response(diary: Diary) -> DiaryResponse:
         recording_duration=diary.recording_duration,
         word_count=diary.word_count,
         weather=json.loads(diary.weather) if diary.weather else None,
+        images=image_urls,
         created_at=diary.created_at,
         updated_at=diary.updated_at
     )
+
+
+# ============ 图片相关端点 ============
+
+@router.post("/images/upload", response_model=ImageUploadResponse)
+async def upload_image(
+    file: UploadFile = File(...),
+    diary_id: int = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    上传单张图片到日记
+
+    1. 校验文件格式和大小
+    2. 上传到 OSS
+    3. 更新日记的 images 字段
+    """
+    try:
+        # 读取文件内容
+        file_data = await file.read()
+
+        # 提取扩展名
+        if file.filename and "." in file.filename:
+            ext = file.filename.rsplit(".", 1)[-1]
+        else:
+            ext = "jpg"
+
+        # 上传到 OSS
+        key = oss_service.upload_image(file_data, ext)
+
+        # 查询日记
+        result = await db.execute(select(Diary).where(Diary.id == diary_id))
+        diary = result.scalar_one_or_none()
+        if not diary:
+            raise HTTPException(status_code=404, detail="日记不存在")
+
+        # 读取已有图片列表
+        images = []
+        if diary.images:
+            try:
+                images = json.loads(diary.images)
+            except json.JSONDecodeError:
+                pass
+
+        # 检查数量上限
+        if len(images) >= 3:
+            raise HTTPException(status_code=400, detail="每篇日记最多添加 3 张图片")
+
+        # 追加新 key
+        images.append(key)
+        diary.images = json.dumps(images, ensure_ascii=False)
+        diary.updated_at = datetime.utcnow()
+        await db.commit()
+
+        # 生成签名 URL
+        url = oss_service.sign_url(key)
+
+        return ImageUploadResponse(
+            key=key,
+            url=url,
+            size=len(file_data)
+        )
+
+    except (HTTPException, ValueError):
+        raise
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"图片上传失败: {str(e)}")
+
+
+@router.delete("/images")
+async def delete_image(
+    request: ImageDeleteRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    删除日记中的单张图片
+    """
+    try:
+        result = await db.execute(select(Diary).where(Diary.id == request.diary_id))
+        diary = result.scalar_one_or_none()
+        if not diary:
+            raise HTTPException(status_code=404, detail="日记不存在")
+
+        # 从列表中移除
+        images = []
+        if diary.images:
+            try:
+                images = json.loads(diary.images)
+            except json.JSONDecodeError:
+                pass
+
+        if request.image_key not in images:
+            raise HTTPException(status_code=404, detail="图片不存在")
+
+        images.remove(request.image_key)
+        diary.images = json.dumps(images, ensure_ascii=False) if images else None
+        diary.updated_at = datetime.utcnow()
+        await db.commit()
+
+        # 从 OSS 删除（事务外，不影响响应结果）
+        try:
+            oss_service.delete_image(request.image_key)
+        except Exception as e:
+            print(f"[OSS] delete_image failed for {request.image_key}: {e}")
+
+        return {"success": True, "diary_id": request.diary_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"图片删除失败: {str(e)}")
 
 
 @router.post("/weather")

@@ -1,4 +1,122 @@
 """
+阿里云 OSS 对象存储服务
+用于存储日记图片和音频文件，私用 Bucket + 签名 URL 模式
+"""
+import os
+import uuid
+from typing import List
+
+import oss2
+
+
+# OSS 客户端延迟初始化
+_client = None
+
+
+def _get_client() -> oss2.Bucket:
+    """获取 OSS 客户端（延迟初始化，首次调用时创建连接）"""
+    global _client
+    if _client is None:
+        access_key_id = os.getenv("OSS_ACCESS_KEY_ID")
+        access_key_secret = os.getenv("OSS_ACCESS_KEY_SECRET")
+        bucket_name = os.getenv("OSS_BUCKET_NAME")
+        endpoint = os.getenv("OSS_ENDPOINT")
+
+        if not all([access_key_id, access_key_secret, bucket_name, endpoint]):
+            raise RuntimeError("OSS not configured: missing environment variables")
+
+        auth = oss2.Auth(access_key_id, access_key_secret)
+        _client = oss2.Bucket(auth, endpoint, bucket_name)
+    return _client
+
+
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "heic"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+def upload_image(file_data: bytes, file_ext: str) -> str:
+    """
+    上传图片到 OSS
+
+    Args:
+        file_data: 图片二进制数据
+        file_ext: 文件扩展名（不含点号）
+
+    Returns:
+        OSS object key，如 "diary_images/a1b2c3d4.jpg"
+
+    Raises:
+        ValueError: 格式不支持或文件过大
+        RuntimeError: OSS 上传失败
+    """
+    ext = file_ext.lower().lstrip(".")
+    if ext not in ALLOWED_EXTENSIONS:
+        raise ValueError(f"不支持的图片格式: {ext}，仅支持 {', '.join(ALLOWED_EXTENSIONS)}")
+
+    if len(file_data) > MAX_FILE_SIZE:
+        raise ValueError(f"图片过大: {len(file_data)} bytes，最大 {MAX_FILE_SIZE} bytes")
+
+    key = f"diary_images/{uuid.uuid4()}.{ext}"
+
+    client = _get_client()
+    content_type_map = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "heic": "image/heic",
+    }
+    headers = {
+        "Content-Type": content_type_map.get(ext, "application/octet-stream"),
+        "Content-Disposition": "inline",
+    }
+
+    result = client.put_object(key, file_data, headers=headers)
+    if result.status != 200:
+        raise RuntimeError(f"OSS 上传失败: status={result.status}")
+
+    return key
+
+
+def delete_image(object_key: str) -> None:
+    """
+    从 OSS 删除图片
+
+    Args:
+        object_key: OSS object key
+    """
+    client = _get_client()
+    client.delete_object(object_key)
+
+
+def batch_delete(keys: List[str]) -> None:
+    """
+    批量删除 OSS 对象
+
+    Args:
+        keys: OSS object key 列表
+    """
+    client = _get_client()
+    for key in keys:
+        try:
+            client.delete_object(key)
+        except Exception:
+            pass  # 删除失败不中断批量操作
+
+
+def sign_url(object_key: str, expires: int = 3600) -> str:
+    """
+    生成签名 URL（临时访问链接）
+
+    Args:
+        object_key: OSS object key
+        expires: 有效期（秒），默认 1 小时
+
+    Returns:
+        签名后的完整 HTTPS URL
+    """
+    client = _get_client()
+    return client.sign_url("GET", object_key, expires)
+"""
 阿里云 OSS 音频存储服务 — 私有 Bucket + 签名 URL
 """
 import oss2

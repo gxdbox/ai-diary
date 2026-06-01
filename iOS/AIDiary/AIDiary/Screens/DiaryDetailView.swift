@@ -646,6 +646,7 @@ struct DiaryDetailView: View {
                 wordCount: 50,
                 weather: Weather(temperature: 26, weather: "晴", weatherIcon: "100", location: "北京"),
                 audioURL: nil,
+                images: nil,
                 createdAt: Date(),
                 updatedAt: Date()
             )

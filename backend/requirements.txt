@@ -25,3 +25,6 @@ httpx==0.26.0
 
 # Date/Time
 python-dateutil==2.8.2
+
+# OSS Storage
+oss2==2.18.5

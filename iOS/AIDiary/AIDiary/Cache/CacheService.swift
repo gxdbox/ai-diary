@@ -48,7 +48,8 @@ actor CacheService {
                 weather: diary.weather,
                 createdAt: diary.createdAt,
                 updatedAt: diary.updatedAt,
-                audioURL: diary.audioURL
+                audioURL: diary.audioURL,
+                images: diary.images
             )
             context.insert(cachedDiary)
         }
@@ -89,6 +90,7 @@ actor CacheService {
             }
             existing.createdAt = diary.createdAt
             existing.updatedAt = diary.updatedAt
+            existing.images = diary.images
             existing.cachedAt = Date()
             existing.audioURL = diary.audioURL
         } else {
@@ -111,7 +113,8 @@ actor CacheService {
                 weather: diary.weather,
                 createdAt: diary.createdAt,
                 updatedAt: diary.updatedAt,
-                audioURL: diary.audioURL
+                audioURL: diary.audioURL,
+                images: diary.images
             )
             context.insert(cachedDiary)
         }
