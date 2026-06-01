@@ -47,5 +47,14 @@ build/
 *.db
 *.sqlite
 
+# Xcode
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+DerivedData/
+
+# Misc
+*" 2.py"
+
 # Chroma
 chroma_data/
