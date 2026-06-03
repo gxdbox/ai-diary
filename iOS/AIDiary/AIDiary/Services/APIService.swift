@@ -1,5 +1,10 @@
 import Foundation
 
+/// FastAPI HTTP 错误响应体
+private struct ErrorResponse: Decodable {
+    let detail: String
+}
+
 class APIService {
     static let shared = APIService()
 
@@ -230,7 +235,15 @@ class APIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["word": word])
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        if httpResponse.statusCode != 200 {
+            let detail = try? JSONDecoder().decode(ErrorResponse.self, from: data)
+            throw NSError(domain: "", code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: detail?.detail ?? "添加失败"])
+        }
         return try decode(data)
     }
 

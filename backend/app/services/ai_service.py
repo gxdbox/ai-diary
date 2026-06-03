@@ -10,7 +10,9 @@ import logging
 from typing import Dict, List
 
 from app.services.ai.client import llm
-from app.services.ai.prompts.cleaner import TEXT_CLEANER_SYSTEM, CLEAN_TEXT_USER_TEMPLATE
+from app.services.ai.prompts.cleaner import (
+    TEXT_CLEANER_SYSTEM, CLEAN_TEXT_USER_TEMPLATE, build_cleaner_prompt
+)
 from app.data.emotions import EMOTION_VOCABULARY, EMOTION_DIMENSIONS
 
 logger = logging.getLogger(__name__)
@@ -38,19 +40,38 @@ class AIService:
         return await llm.chat(messages, **kwargs)
 
     async def clean_text(self, raw_text: str) -> str:
-        """清洗语音转写文本 — 使用 System Prompt 纠正 ASR 同音词错误"""
-        from app.api.dictionary import apply_dictionary_correction
+        """清洗语音转写文本 — 使用 System Prompt 纠正 ASR 同音词错误
+
+        三层处理流程：
+        1. 前置：拼音模糊匹配 + 发音混淆规则矫正
+        2. AI：注入自定义词典到 System Prompt，让 LLM 语义级纠错
+        3. 后置：检查输出中词典词是否已正确出现，兜底修正
+        """
+        from app.api.dictionary import (
+            dictionary_words, apply_dictionary_correction, post_correct
+        )
+
+        # 1. 前置处理：拼音/近音/英文匹配
         corrected_text = apply_dictionary_correction(raw_text)
 
+        # 2. AI 清洗：注入自定义词典
+        system_prompt = build_cleaner_prompt(
+            list(dictionary_words) if dictionary_words else None
+        )
         messages = [
-            {"role": "system", "content": TEXT_CLEANER_SYSTEM},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": CLEAN_TEXT_USER_TEMPLATE.format(text=corrected_text)},
         ]
 
         result = await self.call_llm_with_messages(
             messages, max_tokens=2000, temperature=0.2
         )
-        return result.strip()
+        result = result.strip()
+
+        # 3. 后置处理：词典词兜底检查
+        result = post_correct(result, list(dictionary_words))
+
+        return result
 
     async def analyze_emotion(self, text: str) -> Dict:
         """分析文本情绪 - 使用能量值+强度双维度体系"""

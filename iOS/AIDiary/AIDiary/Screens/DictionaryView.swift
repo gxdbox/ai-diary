@@ -11,6 +11,7 @@ struct DictionaryView: View {
     @State private var deletingEntryId: Int?
     @State private var showDeleteConfirm = false
     @FocusState private var isEditFieldFocused: Bool
+    @State private var errorMessage: String?
 
     // 判断编辑内容是否有改动
     private var hasEditChange: Bool {
@@ -64,6 +65,18 @@ struct DictionaryView: View {
                 Text("「\(entry.word)」将被删除")
             } else {
                 Text("此操作不可撤销")
+            }
+        }
+        .alert("提示", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            if let msg = errorMessage {
+                Text(msg)
             }
         }
     }
@@ -272,7 +285,9 @@ struct DictionaryView: View {
                     newWord = ""
                 }
             } catch {
-                print("添加失败：\(error)")
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
