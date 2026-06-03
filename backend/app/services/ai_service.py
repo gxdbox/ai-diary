@@ -10,6 +10,7 @@ import logging
 from typing import Dict, List
 
 from app.services.ai.client import llm
+from app.services.ai.prompts.cleaner import TEXT_CLEANER_SYSTEM, CLEAN_TEXT_USER_TEMPLATE
 from app.data.emotions import EMOTION_VOCABULARY, EMOTION_DIMENSIONS
 
 logger = logging.getLogger(__name__)
@@ -18,35 +19,37 @@ logger = logging.getLogger(__name__)
 class AIService:
     """AI 服务 - 日记分析业务方法"""
 
-    async def call_llm(self, prompt: str, max_tokens: int = 2000) -> str:
+    async def call_llm(
+        self, prompt: str, max_tokens: int = 2000, temperature: float = None
+    ) -> str:
         """调用大语言模型（简单文本模式）"""
-        return await llm.simple_chat(prompt, max_tokens=max_tokens)
+        kwargs = {"max_tokens": max_tokens}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        return await llm.simple_chat(prompt, **kwargs)
 
     async def call_llm_with_messages(
-        self, messages: List[Dict], max_tokens: int = 2000
+        self, messages: List[Dict], max_tokens: int = 2000, temperature: float = None
     ) -> str:
         """调用大语言模型（消息列表模式）"""
-        return await llm.chat(messages, max_tokens=max_tokens)
+        kwargs = {"max_tokens": max_tokens}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        return await llm.chat(messages, **kwargs)
 
     async def clean_text(self, raw_text: str) -> str:
-        """清洗语音转写文本"""
+        """清洗语音转写文本 — 使用 System Prompt 纠正 ASR 同音词错误"""
         from app.api.dictionary import apply_dictionary_correction
         corrected_text = apply_dictionary_correction(raw_text)
 
-        prompt = f"""你是一个专业的文本编辑助手。请清洗以下语音转文字的日记内容：
+        messages = [
+            {"role": "system", "content": TEXT_CLEANER_SYSTEM},
+            {"role": "user", "content": CLEAN_TEXT_USER_TEMPLATE.format(text=corrected_text)},
+        ]
 
-1. 删除口语填充词（嗯、啊、哈、那个、就是、然后呢、这个等）
-2. 纠正明显的错别字和语音识别错误
-3. 保持原意，不要改变内容
-4. 保持口语化风格，不要过度书面化
-5. 适当调整标点符号，让阅读更流畅
-
-原文：
-{corrected_text}
-
-请直接输出清洗后的文本，不要有任何解释或额外内容。"""
-
-        result = await self.call_llm(prompt)
+        result = await self.call_llm_with_messages(
+            messages, max_tokens=2000, temperature=0.2
+        )
         return result.strip()
 
     async def analyze_emotion(self, text: str) -> Dict:

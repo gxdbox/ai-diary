@@ -80,19 +80,23 @@ class LLMClient:
             logger.error(f"LLM 服务异常: {str(e)}")
             return self._fallback_response()
 
-    async def simple_chat(self, prompt: str, max_tokens: int = 2000) -> str:
+    async def simple_chat(self, prompt: str, max_tokens: int = 2000, temperature: float = None) -> str:
         """
         简单文本模式调用
 
         Args:
             prompt: 用户提示词
             max_tokens: 最大生成 token 数
+            temperature: 采样温度（None 使用默认值）
 
         Returns:
             str: 模型回复文本
         """
         messages = [{"role": "user", "content": prompt}]
-        return await self.chat(messages, max_tokens=max_tokens)
+        kwargs = {"max_tokens": max_tokens}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        return await self.chat(messages, **kwargs)
 
     def _mock_response(self, messages: List[Dict]) -> str:
         """模拟响应（用于开发/测试）"""
