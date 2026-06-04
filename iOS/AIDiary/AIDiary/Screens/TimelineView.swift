@@ -508,6 +508,21 @@ struct DiaryCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // 标题行
+            HStack {
+                if let title = diary.title, !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(Color(hex: "1A1918"))
+                        .lineLimit(1)
+                } else {
+                    Text(diary.createdAt.formatted(date: .abbreviated, time: .omitted))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Color(hex: "1A1918"))
+                }
+                Spacer()
+            }
+
             Text(diary.cleanedText ?? diary.rawText)
                 .font(.system(size: 15, design: .serif))
                 .foregroundColor(Color(hex: "1A1918"))

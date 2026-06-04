@@ -16,6 +16,7 @@ class DiaryResponse(BaseModel):
     """日记响应"""
     id: int
     raw_text: str
+    title: Optional[str] = None
     cleaned_text: Optional[str] = None
     emotion: Optional[str] = None
     emotion_score: Optional[float] = None  # 保留兼容，逐步废弃

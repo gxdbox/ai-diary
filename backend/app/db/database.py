@@ -25,6 +25,7 @@ class Diary(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     raw_text = Column(Text, nullable=False, comment="原始语音转写文本")
+    title = Column(String(100), nullable=True, comment="日记标题")
     cleaned_text = Column(Text, nullable=True, comment="AI清洗后的文本")
     emotion = Column(String(50), nullable=True, comment="主要情绪类型")
     emotion_score = Column(Float, nullable=True, comment="情绪强度(1-10)")
@@ -88,6 +89,20 @@ async def init_db():
             await conn.run_sync(add_images_column)
         except Exception as e:
             print(f"[DB Migration] images column migration: {e}")
+        # 安全迁移：为旧数据库添加 title 列
+        try:
+            def add_title_column(connection):
+                result = connection.execute(
+                    sa_text("PRAGMA table_info(diaries)")
+                )
+                columns = [row[1] for row in result]
+                if "title" not in columns:
+                    connection.execute(
+                        sa_text("ALTER TABLE diaries ADD COLUMN title VARCHAR(100)")
+                    )
+            await conn.run_sync(add_title_column)
+        except Exception as e:
+            print(f"[DB Migration] title column migration: {e}")
 
 
 async def get_db():

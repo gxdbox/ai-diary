@@ -93,6 +93,7 @@ async def create_diary(
         # 创建日记记录
         diary = Diary(
             raw_text=request.raw_text,
+            title=analysis.get("title"),
             cleaned_text=cleaned_text,
             emotion=analysis["emotion"].get("emotion"),
             emotion_score=analysis["emotion"].get("intensity"),  # 兼容：用 intensity 作为旧 score
@@ -353,6 +354,7 @@ async def update_diary(
 
         # 重新分析
         analysis = await ai_service.full_analysis(cleaned_text)
+        diary.title = analysis.get("title")
         diary.emotion = analysis["emotion"].get("emotion")
         diary.emotion_score = analysis["emotion"].get("intensity")  # 兼容
         diary.emotion_energy = analysis["emotion"].get("energy")
@@ -405,6 +407,7 @@ def _diary_to_response(diary: Diary) -> DiaryResponse:
     return DiaryResponse(
         id=diary.id,
         raw_text=diary.raw_text,
+        title=diary.title,
         cleaned_text=diary.cleaned_text,
         emotion=diary.emotion,
         emotion_score=diary.emotion_score,

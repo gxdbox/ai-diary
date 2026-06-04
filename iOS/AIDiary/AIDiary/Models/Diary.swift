@@ -3,6 +3,7 @@ import Foundation
 struct Diary: Codable, Identifiable, Hashable {
     let id: Int
     let rawText: String
+    var title: String?
     var cleanedText: String?
     let emotion: String?
     let emotionScore: Double?  // 兼容旧数据
@@ -41,6 +42,7 @@ struct Diary: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id
         case rawText = "raw_text"
+        case title
         case cleanedText = "cleaned_text"
         case emotion
         case emotionScore = "emotion_score"
