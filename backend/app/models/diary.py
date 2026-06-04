@@ -29,6 +29,7 @@ class DiaryResponse(BaseModel):
     topics: Optional[List[str]] = []
     key_events: Optional[List[str]] = []
     recording_duration: Optional[int] = None
+    audio_url: Optional[str] = None
     word_count: int = 0
     weather: Optional[dict] = None
     images: Optional[List[str]] = []
