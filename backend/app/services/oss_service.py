@@ -9,25 +9,24 @@ from typing import List
 import oss2
 
 
-# OSS 客户端延迟初始化
-_client = None
+# OSS 客户端延迟初始化（用于图片功能，兼容旧代码）
+_image_service = None
+
+
+def _get_image_service():
+    """获取图片OSS服务实例（使用与音频相同的RAM角色认证）"""
+    global _image_service
+    if _image_service is None:
+        _image_service = OSSService()
+    return _image_service
 
 
 def _get_client() -> oss2.Bucket:
-    """获取 OSS 客户端（延迟初始化，首次调用时创建连接）"""
-    global _client
-    if _client is None:
-        access_key_id = os.getenv("OSS_ACCESS_KEY_ID")
-        access_key_secret = os.getenv("OSS_ACCESS_KEY_SECRET")
-        bucket_name = os.getenv("OSS_BUCKET_NAME")
-        endpoint = os.getenv("OSS_ENDPOINT")
-
-        if not all([access_key_id, access_key_secret, bucket_name, endpoint]):
-            raise RuntimeError("OSS not configured: missing environment variables")
-
-        auth = oss2.Auth(access_key_id, access_key_secret)
-        _client = oss2.Bucket(auth, endpoint, bucket_name)
-    return _client
+    """获取 OSS 客户端（兼容旧代码，实际调用OSSService）"""
+    service = _get_image_service()
+    if service.bucket is None:
+        raise RuntimeError("OSS not configured: missing environment variables")
+    return service.bucket
 
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "heic"}
@@ -58,23 +57,31 @@ def upload_image(file_data: bytes, file_ext: str) -> str:
 
     key = f"diary_images/{uuid.uuid4()}.{ext}"
 
-    client = _get_client()
-    content_type_map = {
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "png": "image/png",
-        "heic": "image/heic",
-    }
-    headers = {
-        "Content-Type": content_type_map.get(ext, "application/octet-stream"),
-        "Content-Disposition": "inline",
-    }
+    try:
+        print(f"[OSS] 开始上传图片: key={key}, size={len(file_data)} bytes")
+        client = _get_client()
+        content_type_map = {
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "png": "image/png",
+            "heic": "image/heic",
+        }
+        headers = {
+            "Content-Type": content_type_map.get(ext, "application/octet-stream"),
+            "Content-Disposition": "inline",
+        }
 
-    result = client.put_object(key, file_data, headers=headers)
-    if result.status != 200:
-        raise RuntimeError(f"OSS 上传失败: status={result.status}")
+        result = client.put_object(key, file_data, headers=headers)
+        if result.status != 200:
+            raise RuntimeError(f"OSS 上传失败: status={result.status}")
 
-    return key
+        print(f"[OSS] 图片上传成功: {key}")
+        return key
+    except Exception as e:
+        print(f"[OSS] 图片上传失败: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 def delete_image(object_key: str) -> None:
@@ -84,8 +91,9 @@ def delete_image(object_key: str) -> None:
     Args:
         object_key: OSS object key
     """
-    client = _get_client()
-    client.delete_object(object_key)
+    service = _get_image_service()
+    full_url = f"https://{service.bucket_name}.{service.endpoint}/{object_key}"
+    service.delete(full_url)
 
 
 def batch_delete(keys: List[str]) -> None:
@@ -95,10 +103,11 @@ def batch_delete(keys: List[str]) -> None:
     Args:
         keys: OSS object key 列表
     """
-    client = _get_client()
+    service = _get_image_service()
     for key in keys:
         try:
-            client.delete_object(key)
+            full_url = f"https://{service.bucket_name}.{service.endpoint}/{key}"
+            service.delete(full_url)
         except Exception:
             pass  # 删除失败不中断批量操作
 
@@ -114,8 +123,10 @@ def sign_url(object_key: str, expires: int = 3600) -> str:
     Returns:
         签名后的完整 HTTPS URL
     """
-    client = _get_client()
-    return client.sign_url("GET", object_key, expires)
+    service = _get_image_service()
+    # 构建完整URL
+    full_url = f"https://{service.bucket_name}.{service.endpoint}/{object_key}"
+    return service.get_signed_url(full_url, expires)
 """
 阿里云 OSS 音频存储服务 — 私有 Bucket + 签名 URL
 """
@@ -225,7 +236,7 @@ class OSSService:
             content = await file.read()
             print(f"[OSS] 上传到key: {key}, 大小: {len(content)} bytes")
             self.bucket.put_object(key, content)
-            
+
             url = f"https://{self.bucket_name}.{self.endpoint}/{key}"
             print(f"[OSS] 上传成功: {url}")
             return url

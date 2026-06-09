@@ -19,6 +19,7 @@ from app.models.diary import (
 from app.services.ai_service import ai_service
 from app.services.text_cleaner import text_cleaner
 from app.services.vector_store import vector_store
+from app.services.entity_extractor import EntityExtractor
 from app.services import oss_service
 from app.services.oss_service import OSSService
 
@@ -49,6 +50,36 @@ def _async_learn_from_diary(diary_id: int, diary_data: dict):
     except Exception as e:
         # 失败只记录日志，不影响用户
         print(f"[Memory Learning Error] diary_id={diary_id}: {e}")
+
+
+def _async_extract_entities(diary_id: int, cleaned_text: str, created_at: datetime):
+    """
+    异步提取日记中的实体（后台任务）
+
+    从日记文本中提取人物、地点、关系等信息并保存到数据库
+    """
+    try:
+        # 动态导入避免循环导入
+        database_module = importlib.import_module('app.db.database')
+        entity_extractor_module = importlib.import_module('app.services.entity_extractor')
+
+        # 使用同步数据库连接（后台任务）
+        db = next(database_module.get_sync_db())
+        EntityExtractor = entity_extractor_module.EntityExtractor
+        extractor = EntityExtractor(db)
+
+        # 提取实体
+        import asyncio
+        entities = asyncio.run(extractor.extract_entities(cleaned_text))
+
+        # 保存实体
+        asyncio.run(extractor.save_entities(entities, diary_id, created_at))
+
+        db.close()
+
+    except Exception as e:
+        # 失败只记录日志，不影响用户
+        print(f"[Entity Extraction Error] diary_id={diary_id}: {e}")
 
 
 @router.post("/clean", response_model=CleanTextResponse)
@@ -133,6 +164,15 @@ async def create_diary(
             "key_events": analysis["key_events"]
         }
         background_tasks.add_task(_async_learn_from_diary, diary.id, diary_data)
+
+        # [真正异步] 使用独立线程提取实体，完全不阻塞主流程
+        import threading
+        thread = threading.Thread(
+            target=_async_extract_entities,
+            args=(diary.id, cleaned_text, diary.created_at),
+            daemon=True  # 守护线程，主程序退出时自动结束
+        )
+        thread.start()
 
         return _diary_to_response(diary)
 
@@ -309,7 +349,7 @@ async def delete_diary(
                 oss_keys = json.loads(diary.images)
             except:
                 pass
-        
+
         # 保存音频URL用于事务外清理
         audio_url = diary.audio_url
 
@@ -331,7 +371,7 @@ async def delete_diary(
             oss_service.batch_delete(oss_keys)
         except Exception as e:
             print(f"[OSS] cleanup failed for diary {diary_id}: {e}")
-    
+
     # 删除音频文件
     if audio_url:
         try:
@@ -594,7 +634,7 @@ async def upload_diary_audio(
 ):
     """
     上传日记音频文件到OSS
-    
+
     1. 查询日记
     2. 验证并上传音频到OSS
     3. 保存音频URL到数据库
@@ -634,7 +674,7 @@ async def get_diary_audio_url(
 ):
     """
     获取日记音频的签名URL
-    
+
     1. 查询日记获取audio_url
     2. 生成签名URL（1小时有效）
     3. 返回签名URL

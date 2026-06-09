@@ -72,6 +72,46 @@ class Conversation(Base):
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
 
 
+class Character(Base):
+    """日记人物实体"""
+    __tablename__ = "characters"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False, comment="人物名称")
+    first_appearance = Column(DateTime, nullable=False, comment="首次出现时间")
+    last_appearance = Column(DateTime, nullable=False, comment="最后出现时间")
+    appearance_count = Column(Integer, default=0, comment="出现次数")
+    avatar_color = Column(String(20), default="#4A90E2", comment="头像颜色（十六进制）")
+    created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+
+
+class Relationship(Base):
+    """人物关系"""
+    __tablename__ = "relationships"
+
+    id = Column(Integer, primary_key=True, index=True)
+    character_a_id = Column(Integer, nullable=False, comment="人物A ID")
+    character_b_id = Column(Integer, nullable=False, comment="人物B ID")
+    relationship_type = Column(String(50), default="unknown", comment="关系类型：朋友/家人/同事等")
+    strength = Column(Float, default=0.5, comment="关系强度 0-1")
+    last_interaction = Column(DateTime, nullable=True, comment="最后互动时间")
+    created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+
+
+class Location(Base):
+    """地点实体"""
+    __tablename__ = "locations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), unique=True, nullable=False, comment="地点名称")
+    visit_count = Column(Integer, default=0, comment="访问次数")
+    last_visit = Column(DateTime, nullable=True, comment="最后访问时间")
+    created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+
+
 async def init_db():
     """初始化数据库表"""
     async with engine.begin() as conn:
@@ -118,6 +158,19 @@ async def init_db():
             await conn.run_sync(add_audio_url_column)
         except Exception as e:
             print(f"[DB Migration] audio_url column migration: {e}")
+        # 新增：为 relationships 表添加索引
+        try:
+            def add_relationship_indexes(connection):
+                # 检查索引是否存在
+                result = connection.execute(
+                    sa_text("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_relationship_char_a'")
+                )
+                if not result.fetchone():
+                    connection.execute(sa_text("CREATE INDEX idx_relationship_char_a ON relationships(character_a_id)"))
+                    connection.execute(sa_text("CREATE INDEX idx_relationship_char_b ON relationships(character_b_id)"))
+            await conn.run_sync(add_relationship_indexes)
+        except Exception as e:
+            print(f"[DB Migration] relationship indexes migration: {e}")
 
 
 async def get_db():

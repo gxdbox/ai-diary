@@ -12,7 +12,7 @@ load_dotenv(env_path)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import diary, analysis, search, dictionary, assistant, companion
+from app.api import diary, analysis, search, dictionary, assistant, companion, world
 from app.db.database import init_db, async_session_maker
 from app.services.oss_service import oss_service
 
@@ -38,6 +38,7 @@ app.include_router(search.router, prefix="/api/search", tags=["搜索"])
 app.include_router(dictionary.router, prefix="/api/dictionary", tags=["词典"])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["智能助手"])
 app.include_router(companion.router, prefix="/api/companion", tags=["情感陪伴"])
+app.include_router(world.router, tags=["虚拟世界"])
 
 
 @app.on_event("startup")

@@ -16,7 +16,7 @@ enum AppEnvironment {
 
 struct AppConfig {
     // 当前环境：开发时用 .development，发布时改为 .production
-    static let environment: AppEnvironment = .production
+    static let environment: AppEnvironment = .development
 
     static var baseURL: String {
         environment.baseURL

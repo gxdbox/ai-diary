@@ -5,6 +5,7 @@ struct ContentView: View {
     
     enum Tab: String, CaseIterable {
         case timeline = "时间轴"
+        case world = "世界"
         case search = "搜索"
         case analytics = "分析"
         case settings = "我的"
@@ -30,6 +31,8 @@ struct ContentView: View {
         switch selectedTab {
         case .timeline:
             TimelineView()
+        case .world:
+            WorldView()
         case .search:
             SearchView()
         case .analytics:
@@ -45,6 +48,7 @@ struct TabBarView: View {
     
     private let icons: [ContentView.Tab: String] = [
         .timeline: "📅",
+        .world: "🌍",
         .search: "🔍",
         .analytics: "📊",
         .settings: "😊"
