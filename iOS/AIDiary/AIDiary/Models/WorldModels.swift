@@ -7,6 +7,20 @@
 
 import Foundation
 
+// MARK: - 人物别名
+struct Alias: Codable, Identifiable, Hashable {
+    let id: Int
+    let alias: String
+    let source: String
+    let confidence: Double
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, alias, source, confidence
+        case createdAt = "created_at"
+    }
+}
+
 // MARK: - 人物实体
 struct Character: Codable, Identifiable, Hashable {
     let id: Int
@@ -15,17 +29,43 @@ struct Character: Codable, Identifiable, Hashable {
     let avatarColor: String
     let firstAppearance: Date
     let lastAppearance: Date
+    let aliases: [Alias]
 
     // UI 相关属性（非持久化）
     var x: CGFloat = 0
     var y: CGFloat = 0
 
     enum CodingKeys: String, CodingKey {
-        case id, name
+        case id, name, aliases
         case appearanceCount = "appearance_count"
         case avatarColor = "avatar_color"
         case firstAppearance = "first_appearance"
         case lastAppearance = "last_appearance"
+    }
+
+    init(id: Int, name: String, appearanceCount: Int, avatarColor: String,
+         firstAppearance: Date, lastAppearance: Date, aliases: [Alias] = [],
+         x: CGFloat = 0, y: CGFloat = 0) {
+        self.id = id
+        self.name = name
+        self.appearanceCount = appearanceCount
+        self.avatarColor = avatarColor
+        self.firstAppearance = firstAppearance
+        self.lastAppearance = lastAppearance
+        self.aliases = aliases
+        self.x = x
+        self.y = y
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        appearanceCount = try container.decode(Int.self, forKey: .appearanceCount)
+        avatarColor = try container.decode(String.self, forKey: .avatarColor)
+        firstAppearance = try container.decode(Date.self, forKey: .firstAppearance)
+        lastAppearance = try container.decode(Date.self, forKey: .lastAppearance)
+        aliases = try container.decodeIfPresent([Alias].self, forKey: .aliases) ?? []
     }
 }
 

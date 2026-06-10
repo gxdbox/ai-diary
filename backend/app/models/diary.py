@@ -134,6 +134,18 @@ class ImageDeleteRequest(BaseModel):
 
 # ========== 虚拟世界相关模型 ==========
 
+class AliasResponse(BaseModel):
+    """人物别名响应"""
+    id: int
+    alias: str
+    source: str
+    confidence: float
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class CharacterResponse(BaseModel):
     """人物实体响应"""
     id: int
@@ -142,6 +154,7 @@ class CharacterResponse(BaseModel):
     avatar_color: str
     first_appearance: datetime
     last_appearance: datetime
+    aliases: List[AliasResponse] = []
 
     class Config:
         from_attributes = True

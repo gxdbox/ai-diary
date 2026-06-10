@@ -9,8 +9,9 @@ from sqlalchemy import select, func, desc
 from typing import List, Optional
 from datetime import datetime
 
-from app.db.database import get_db, Diary, Character, Relationship, Location
+from app.db.database import get_db, Diary, Character, Relationship, Location, CharacterAlias
 from app.models.diary import (
+    AliasResponse,
     CharacterResponse,
     RelationshipResponse,
     LocationResponse,
@@ -21,7 +22,27 @@ from app.models.diary import (
 router = APIRouter(prefix="/api/world", tags=["虚拟世界"])
 
 
-def _character_to_response(char: Character) -> CharacterResponse:
+async def _load_aliases(db: AsyncSession, character_id: int) -> List[AliasResponse]:
+    """加载人物别名列表"""
+    result = await db.execute(
+        select(CharacterAlias)
+        .where(CharacterAlias.character_id == character_id)
+        .order_by(CharacterAlias.confidence.desc())
+    )
+    aliases = result.scalars().all()
+    return [
+        AliasResponse(
+            id=a.id,
+            alias=a.alias,
+            source=a.source,
+            confidence=a.confidence,
+            created_at=a.created_at
+        )
+        for a in aliases
+    ]
+
+
+def _character_to_response(char: Character, aliases: List[AliasResponse] = None) -> CharacterResponse:
     """转换 Character ORM 对象为响应模型"""
     return CharacterResponse(
         id=char.id,
@@ -29,7 +50,8 @@ def _character_to_response(char: Character) -> CharacterResponse:
         appearance_count=char.appearance_count,
         avatar_color=char.avatar_color,
         first_appearance=char.first_appearance,
-        last_appearance=char.last_appearance
+        last_appearance=char.last_appearance,
+        aliases=aliases or []
     )
 
 
@@ -56,10 +78,9 @@ async def get_characters(
     """
     获取所有人物列表
 
-    按出现次数、最后出现时间或名称排序
+    按出现次数、最后出现时间或名称排序，附带别名信息
     """
     try:
-        # 构建排序
         if sort_by == "last_appearance":
             order_by = desc(Character.last_appearance)
         elif sort_by == "name":
@@ -74,7 +95,12 @@ async def get_characters(
         )
         characters = result.scalars().all()
 
-        return [_character_to_response(char) for char in characters]
+        response_list = []
+        for char in characters:
+            aliases = await _load_aliases(db, char.id)
+            response_list.append(_character_to_response(char, aliases))
+
+        return response_list
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取人物列表失败: {str(e)}")
@@ -99,7 +125,6 @@ async def get_relationships(
         )
         relationships = result.scalars().all()
 
-        # 批量加载关联的人物信息
         response_list = []
         for rel in relationships:
             char_a_result = await db.execute(
@@ -159,10 +184,9 @@ async def get_character_timeline(
     """
     获取某个人物的时间轴（相关日记）
 
-    返回包含该人物的所有日记，按时间倒序排列
+    返回包含该人物及其所有别名的日记，按时间倒序排列
     """
     try:
-        # 先找到人物
         result = await db.execute(
             select(Character).where(Character.name == character_name)
         )
@@ -171,27 +195,32 @@ async def get_character_timeline(
         if not character:
             raise HTTPException(status_code=404, detail=f"人物 '{character_name}' 不存在")
 
-        # 查找包含该人物名称的日记（简单文本匹配）
-        # 注意：这是一个简化的实现，更精确的方式需要建立 diary-character 关联表
+        aliases = await _load_aliases(db, character.id)
+        alias_names = [a.alias for a in aliases]
+
+        search_terms = [character_name] + alias_names
+
         from sqlalchemy import text as sql_text
 
+        conditions = " OR ".join(["(cleaned_text LIKE :p{0} OR raw_text LIKE :p{0})".format(i)
+                                  for i in range(len(search_terms))])
+        params = {f"p{i}": f"%{term}%" for i, term in enumerate(search_terms)}
+        params["limit"] = limit
+
         diary_result = await db.execute(
-            sql_text("""
+            sql_text(f"""
                 SELECT * FROM diaries
-                WHERE cleaned_text LIKE :pattern
-                   OR raw_text LIKE :pattern
+                WHERE {conditions}
                 ORDER BY created_at DESC
                 LIMIT :limit
             """),
-            {"pattern": f"%{character_name}%", "limit": limit}
+            params
         )
         rows = diary_result.fetchall()
 
-        # 转换为 DiaryResponse
+        import json
         diaries = []
         for row in rows:
-            # 解析 JSON 字段
-            import json
             emotion_keywords = json.loads(row.emotion_keywords) if row.emotion_keywords else []
             secondary_emotions = json.loads(row.secondary_emotions) if row.secondary_emotions else []
             topics = json.loads(row.topics) if row.topics else []
@@ -223,8 +252,10 @@ async def get_character_timeline(
                 updated_at=row.updated_at
             ))
 
+        char_aliases = await _load_aliases(db, character.id)
+
         return {
-            "character": _character_to_response(character),
+            "character": _character_to_response(character, char_aliases),
             "diaries": diaries,
             "total": len(diaries)
         }
@@ -243,7 +274,6 @@ async def get_world_stats(db: AsyncSession = Depends(get_db)):
     包括人物总数、关系总数、最活跃人物、最强关系等
     """
     try:
-        # 统计总数
         char_count_result = await db.execute(select(func.count()).select_from(Character))
         total_characters = char_count_result.scalar()
 
@@ -253,7 +283,6 @@ async def get_world_stats(db: AsyncSession = Depends(get_db)):
         loc_count_result = await db.execute(select(func.count()).select_from(Location))
         total_locations = loc_count_result.scalar()
 
-        # 最活跃人物（出现次数最多）
         most_active_result = await db.execute(
             select(Character)
             .order_by(desc(Character.appearance_count))
@@ -261,7 +290,6 @@ async def get_world_stats(db: AsyncSession = Depends(get_db)):
         )
         most_active_char = most_active_result.scalar_one_or_none()
 
-        # 最强关系
         strongest_rel_result = await db.execute(
             select(Relationship)
             .order_by(desc(Relationship.strength))
@@ -269,14 +297,13 @@ async def get_world_stats(db: AsyncSession = Depends(get_db)):
         )
         strongest_rel = strongest_rel_result.scalar_one_or_none()
 
-        # 构建响应
         most_active_character = None
         if most_active_char:
-            most_active_character = _character_to_response(most_active_char)
+            aliases = await _load_aliases(db, most_active_char.id)
+            most_active_character = _character_to_response(most_active_char, aliases)
 
         strongest_relationship = None
         if strongest_rel:
-            # 加载关联人物
             char_a_result = await db.execute(
                 select(Character).where(Character.id == strongest_rel.character_a_id)
             )
@@ -310,35 +337,53 @@ async def search_characters(
     """
     搜索人物
 
-    支持模糊匹配人物名称
+    支持模糊匹配人物名称和别名
     """
     try:
         from sqlalchemy import text as sql_text
 
         result = await db.execute(
             sql_text("""
-                SELECT * FROM characters
-                WHERE name LIKE :pattern
-                ORDER BY appearance_count DESC
+                SELECT DISTINCT c.* FROM characters c
+                LEFT JOIN character_aliases ca ON ca.character_id = c.id
+                WHERE c.name LIKE :pattern
+                   OR ca.alias LIKE :pattern
+                ORDER BY c.appearance_count DESC
                 LIMIT :limit
             """),
             {"pattern": f"%{query}%", "limit": limit}
         )
         rows = result.fetchall()
 
-        # 手动构建 CharacterResponse
         characters = []
         for row in rows:
-            characters.append(CharacterResponse(
-                id=row.id,
-                name=row.name,
+            char = Character(
+                id=row.id, name=row.name,
                 appearance_count=row.appearance_count,
                 avatar_color=row.avatar_color,
                 first_appearance=row.first_appearance,
-                last_appearance=row.last_appearance
-            ))
+                last_appearance=row.last_appearance,
+                created_at=row.created_at, updated_at=row.updated_at
+            )
+            aliases = await _load_aliases(db, char.id)
+            characters.append(_character_to_response(char, aliases))
 
         return characters
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"搜索人物失败: {str(e)}")
+
+
+@router.get("/aliases/{character_id}", response_model=List[AliasResponse])
+async def get_character_aliases(
+    character_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取某个人物的所有别名
+    """
+    try:
+        aliases = await _load_aliases(db, character_id)
+        return aliases
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取别名失败: {str(e)}")

@@ -100,6 +100,18 @@ class Relationship(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
 
+class CharacterAlias(Base):
+    """人物别名表"""
+    __tablename__ = "character_aliases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    character_id = Column(Integer, nullable=False, index=True, comment="关联人物 ID")
+    alias = Column(String(100), nullable=False, comment="别名")
+    source = Column(String(50), default="auto", comment="来源: auto/llm/manual")
+    confidence = Column(Float, default=1.0, comment="匹配置信度 0-1")
+    created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
+
+
 class Location(Base):
     """地点实体"""
     __tablename__ = "locations"
@@ -171,6 +183,28 @@ async def init_db():
             await conn.run_sync(add_relationship_indexes)
         except Exception as e:
             print(f"[DB Migration] relationship indexes migration: {e}")
+        # 安全迁移：创建 character_aliases 表
+        try:
+            def add_character_aliases_table(connection):
+                result = connection.execute(
+                    sa_text("SELECT name FROM sqlite_master WHERE type='table' AND name='character_aliases'")
+                )
+                if not result.fetchone():
+                    connection.execute(sa_text("""
+                        CREATE TABLE character_aliases (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            character_id INTEGER NOT NULL,
+                            alias VARCHAR(100) NOT NULL,
+                            source VARCHAR(50) DEFAULT 'auto',
+                            confidence FLOAT DEFAULT 1.0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                    connection.execute(sa_text("CREATE INDEX idx_alias_character_id ON character_aliases(character_id)"))
+                    connection.execute(sa_text("CREATE INDEX idx_alias_name ON character_aliases(alias)"))
+            await conn.run_sync(add_character_aliases_table)
+        except Exception as e:
+            print(f"[DB Migration] character_aliases table migration: {e}")
 
 
 async def get_db():

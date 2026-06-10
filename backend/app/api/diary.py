@@ -62,15 +62,21 @@ def _async_extract_entities(diary_id: int, cleaned_text: str, created_at: dateti
         # 动态导入避免循环导入
         database_module = importlib.import_module('app.db.database')
         entity_extractor_module = importlib.import_module('app.services.entity_extractor')
+        normalizer_module = importlib.import_module('app.services.entity_normalizer')
 
         # 使用同步数据库连接（后台任务）
         db = next(database_module.get_sync_db())
         EntityExtractor = entity_extractor_module.EntityExtractor
+        EntityNormalizer = normalizer_module.EntityNormalizer
         extractor = EntityExtractor(db)
+
+        # 构建已知实体上下文用于别名归一化
+        normalizer = EntityNormalizer(db)
+        context = normalizer.build_context()
 
         # 提取实体
         import asyncio
-        entities = asyncio.run(extractor.extract_entities(cleaned_text))
+        entities = asyncio.run(extractor.extract_entities(cleaned_text, context))
 
         # 保存实体
         asyncio.run(extractor.save_entities(entities, diary_id, created_at))
