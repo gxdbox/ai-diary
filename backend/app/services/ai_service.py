@@ -204,14 +204,23 @@ class AIService:
         events = [e.strip() for e in result.strip().split("\n") if e.strip()]
         return events[:3]
 
+    async def generate_title(self, text: str) -> str:
+        """根据日记内容生成标题"""
+        prompt = f"请为以下日记内容生成一个简洁的标题（15字以内，不要标点符号和引号）：\n\n{text}\n\n标题："
+        result = await self.call_llm(prompt, max_tokens=50)
+        title = result.strip()[:15]
+        title = title.rstrip("。，、；：！？.!?\"' ")
+        return title if title else "无标题日记"
+
     async def full_analysis(self, text: str) -> Dict:
-        """完整分析：情绪、主题、事件 - 并行执行"""
-        emotion, topics, events = await asyncio.gather(
+        """完整分析：情绪、主题、事件、标题 - 并行执行"""
+        emotion, topics, events, title = await asyncio.gather(
             self.analyze_emotion(text),
             self.extract_topics(text),
             self.extract_key_events(text),
+            self.generate_title(text),
         )
-        return {"emotion": emotion, "topics": topics, "key_events": events}
+        return {"emotion": emotion, "topics": topics, "key_events": events, "title": title}
 
     async def answer_question(self, question: str, context: str) -> str:
         """基于上下文回答问题（RAG）"""

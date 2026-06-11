@@ -58,3 +58,11 @@ DerivedData/
 
 # Chroma
 chroma_data/
+
+# Logs
+logs/
+*.log
+
+# Backups
+backups/
+*.db.bak

@@ -12,6 +12,37 @@ load_dotenv(env_path)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
+from logging.handlers import RotatingFileHandler
+
+# 创建 logs 目录
+os.makedirs("logs", exist_ok=True)
+
+# 配置日志格式
+log_formatter = logging.Formatter(
+    '%(asctime)s [%(levelname)s] %(name)s:%(lineno)d - %(message)s'
+)
+
+# 文件日志处理器(带轮转)
+file_handler = RotatingFileHandler(
+    'logs/app.log',
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5
+)
+file_handler.setFormatter(log_formatter)
+file_handler.setLevel(logging.INFO)
+
+# 控制台日志处理器
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_formatter)
+console_handler.setLevel(logging.WARNING)
+
+# 配置根日志器
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
+
 from app.api import diary, analysis, search, dictionary, assistant, companion, world
 from app.db.database import init_db, async_session_maker
 from app.services.oss_service import oss_service

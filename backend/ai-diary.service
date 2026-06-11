@@ -1,0 +1,24 @@
+[Unit]
+Description=AI Diary Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/ai-diary
+Environment="PATH=/opt/conda/bin:/usr/local/bin:/usr/bin"
+ExecStart=/opt/conda/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=append:/root/ai-diary/logs/app.log
+StandardError=append:/root/ai-diary/logs/error.log
+
+# 安全配置
+NoNewPrivileges=false
+PrivateTmp=true
+
+# 资源限制
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
