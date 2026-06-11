@@ -294,7 +294,7 @@ struct TimelineView: View {
                 let dateRange = selectedTimeRange.toDateRange()
                 let response = try await APIService.shared.fetchDiaries(
                     page: 1,
-                    pageSize: 20,
+                    pageSize: 50,
                     emotion: selectedEmotion,
                     topic: selectedTopic,
                     startDate: dateRange.start,
@@ -361,7 +361,7 @@ struct TimelineView: View {
                 let dateRange = selectedTimeRange.toDateRange()
                 let response = try await APIService.shared.fetchDiaries(
                     page: currentPage,
-                    pageSize: 20,
+                    pageSize: 50,
                     emotion: selectedEmotion,
                     topic: selectedTopic,
                     startDate: dateRange.start,

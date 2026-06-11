@@ -128,3 +128,66 @@ class ImageDeleteRequest(BaseModel):
     """删除图片请求"""
     diary_id: int = Field(..., description="日记ID")
     image_key: str = Field(..., description="OSS object key")
+
+
+# ========== 虚拟世界相关模型 ==========
+
+class AliasResponse(BaseModel):
+    """人物别名响应"""
+    id: int
+    alias: str
+    source: str
+    confidence: float
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CharacterResponse(BaseModel):
+    """人物实体响应"""
+    id: int
+    name: str
+    appearance_count: int
+    avatar_color: str
+    first_appearance: datetime
+    last_appearance: datetime
+    aliases: List[AliasResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+class RelationshipResponse(BaseModel):
+    """人物关系响应"""
+    id: int
+    character_a_id: int
+    character_b_id: int
+    character_a_name: Optional[str] = None
+    character_b_name: Optional[str] = None
+    relationship_type: str
+    strength: float
+    last_interaction: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class LocationResponse(BaseModel):
+    """地点实体响应"""
+    id: int
+    name: str
+    visit_count: int
+    last_visit: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class WorldStatsResponse(BaseModel):
+    """虚拟世界统计信息"""
+    total_characters: int = 0
+    total_relationships: int = 0
+    total_locations: int = 0
+    most_active_character: Optional[CharacterResponse] = None
+    strongest_relationship: Optional[RelationshipResponse] = None

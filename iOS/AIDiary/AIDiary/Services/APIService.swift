@@ -13,7 +13,7 @@ class APIService {
     }
 
     private init() {}
-    
+
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
@@ -21,13 +21,13 @@ class APIService {
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         return formatter
     }()
-    
+
     private func decode<T: Codable>(_ data: Data) throws -> T {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .formatted(dateFormatter)
         return try decoder.decode(T.self, from: data)
     }
-    
+
     func fetchDiaries(page: Int = 1, pageSize: Int = 20, emotion: String? = nil, topic: String? = nil, startDate: String? = nil, endDate: String? = nil) async throws -> DiaryListResponse {
         var urlComponents = URLComponents(string: "\(baseURL)/api/diary/list")!
         urlComponents.queryItems = [
@@ -63,13 +63,13 @@ class APIService {
         let (data, _) = try await URLSession.shared.data(from: url)
         return try decode(data)
     }
-    
+
     func fetchStats() async throws -> Stats {
         let url = URL(string: "\(baseURL)/api/analysis/stats")!
         let (data, _) = try await URLSession.shared.data(from: url)
         return try decode(data)
     }
-    
+
     func fetchInsights(days: Int = 7) async throws -> [Insight] {
         let url = URL(string: "\(baseURL)/api/analysis/insights?days=\(days)")!
         let (data, _) = try await URLSession.shared.data(from: url)
@@ -82,22 +82,22 @@ class APIService {
         let (data, _) = try await URLSession.shared.data(from: url)
         return try decode(data)
     }
-    
+
     func createDiary(rawText: String, recordingDuration: Int? = nil) async throws -> Diary {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/create")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
+
         var body: [String: Any] = ["raw_text": rawText]
         if let duration = recordingDuration {
             body["recording_duration"] = duration
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        
+
         let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)
     }
-    
+
     func deleteDiary(id: Int) async throws {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/\(id)")!)
         request.httpMethod = "DELETE"
@@ -160,24 +160,24 @@ class APIService {
         }
         return signedURL
     }
-    
+
     func semanticSearch(query: String) async throws -> SearchResponse {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/search/semantic")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["query": query, "limit": 10])
-        
+
         let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)
     }
-    
+
     func fetchEmotionTrend(days: Int = 7) async throws -> [EmotionTrendData] {
         let url = URL(string: "\(baseURL)/api/analysis/emotion/trend?days=\(days)")!
         let (data, _) = try await URLSession.shared.data(from: url)
         let response: EmotionTrendResponse = try decode(data)
         return response.trend
     }
-    
+
     func askQuestion(question: String, conversationHistory: [[String: String]]? = nil) async throws -> AskResponse {
         let urlString = "\(baseURL)/api/assistant/ask?question=\(question.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
         guard let url = URL(string: urlString) else {
@@ -336,6 +336,72 @@ class APIService {
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
+    }
+
+    // MARK: - World API
+
+    func fetchCharacters(limit: Int = 100, sortBy: String = "appearance_count") async throws -> [Character] {
+        var urlComponents = URLComponents(string: "\(baseURL)/api/world/characters")!
+        urlComponents.queryItems = [
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "sort_by", value: sortBy)
+        ]
+
+        guard let url = urlComponents.url else {
+            throw URLError(.badURL)
+        }
+
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try decode(data)
+    }
+
+    func fetchRelationships(minStrength: Double = 0.0, limit: Int = 200) async throws -> [Relationship] {
+        var urlComponents = URLComponents(string: "\(baseURL)/api/world/relationships")!
+        urlComponents.queryItems = [
+            URLQueryItem(name: "min_strength", value: "\(minStrength)"),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+
+        guard let url = urlComponents.url else {
+            throw URLError(.badURL)
+        }
+
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try decode(data)
+    }
+
+    func fetchLocations(limit: Int = 100) async throws -> [Location] {
+        let url = URL(string: "\(baseURL)/api/world/locations?limit=\(limit)")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try decode(data)
+    }
+
+    func fetchWorldStats() async throws -> WorldStats {
+        let url = URL(string: "\(baseURL)/api/world/stats")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try decode(data)
+    }
+
+    func fetchCharacterTimeline(characterName: String, limit: Int = 50) async throws -> CharacterTimelineResponse {
+        let encodedName = characterName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? characterName
+        let url = URL(string: "\(baseURL)/api/world/timeline/\(encodedName)?limit=\(limit)")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try decode(data)
+    }
+
+    func searchCharacters(query: String, limit: Int = 20) async throws -> [Character] {
+        var urlComponents = URLComponents(string: "\(baseURL)/api/world/search/character")!
+        urlComponents.queryItems = [
+            URLQueryItem(name: "query", value: query),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+
+        guard let url = urlComponents.url else {
+            throw URLError(.badURL)
+        }
+
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try decode(data)
     }
 }
 
