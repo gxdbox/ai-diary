@@ -1,0 +1,111 @@
+// 松果日记 App Icon 设计稿
+// 设计说明：松果形状的六边形组合，象征珍藏记忆
+
+layout {
+  title: "松果日记 App Icon"
+  size: 1024x1024
+}
+
+// 背景：圆形容器（iOS App Icon 标准）
+circle {
+  id: "background"
+  position: center
+  radius: 512
+  fill: "#F5E6D3"  // 浅棕暖色调背景
+}
+
+// 松果主体：六边形鳞片组合
+// 第一层（顶部）
+hexagon {
+  id: "scale_1"
+  position: center.offset(0, -180)
+  size: 80
+  fill: "#C4935A"
+  opacity: 0.6
+}
+
+// 第二层
+hexagon {
+  id: "scale_2"
+  position: center.offset(-60, -100)
+  size: 90
+  fill: "#C4935A"
+  opacity: 0.7
+}
+
+hexagon {
+  id: "scale_3"
+  position: center.offset(60, -100)
+  size: 90
+  fill: "#C4935A"
+  opacity: 0.7
+}
+
+// 第三层（中心层）
+hexagon {
+  id: "scale_4"
+  position: center.offset(-90, 0)
+  size: 100
+  fill: "#C4935A"
+  opacity: 0.85
+}
+
+hexagon {
+  id: "scale_5"
+  position: center.offset(0, 0)
+  size: 110
+  fill: "#C4935A"  // 主色，最亮
+  opacity: 1.0
+}
+
+hexagon {
+  id: "scale_6"
+  position: center.offset(90, 0)
+  size: 100
+  fill: "#C4935A"
+  opacity: 0.85
+}
+
+// 第四层
+hexagon {
+  id: "scale_7"
+  position: center.offset(-60, 100)
+  size: 90
+  fill: "#C4935A"
+  opacity: 0.75
+}
+
+hexagon {
+  id: "scale_8"
+  position: center.offset(60, 100)
+  size: 90
+  fill: "#C4935A"
+  opacity: 0.75
+}
+
+// 第五层（底部）
+hexagon {
+  id: "scale_9"
+  position: center.offset(0, 180)
+  size: 80
+  fill: "#C4935A"
+  opacity: 0.6
+}
+
+// 光泽效果：顶部亮点
+ellipse {
+  id: "highlight"
+  position: center.offset(0, -200)
+  size: 60x30
+  fill: "#FFFFFF"
+  opacity: 0.3
+}
+
+// 底部阴影
+ellipse {
+  id: "shadow"
+  position: center.offset(0, 200)
+  size: 200x40
+  fill: "#8B6B4A"
+  opacity: 0.2
+}
