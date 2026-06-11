@@ -155,16 +155,9 @@ struct DiaryDetailView: View {
                 }
             }
 
-            // 标题或日期
-            if let title = displayDiary.title, !title.isEmpty {
-                Text(title)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color(hex: "1A1918"))
-            } else {
-                Text(displayDiary.createdAt, style: .date)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color(hex: "1A1918"))
-            }
+            Text(displayDiary.createdAt, style: .date)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(Color(hex: "1A1918"))
 
             HStack(spacing: 8) {
                 if let duration = displayDiary.recordingDuration {

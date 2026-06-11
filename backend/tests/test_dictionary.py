@@ -18,7 +18,6 @@ from app.api.dictionary import (
     get_all_pinyins,
     is_english_word,
     apply_dictionary_correction,
-    post_correct,
 )
 from app.services.ai.prompts.cleaner import build_cleaner_prompt
 
@@ -153,7 +152,7 @@ class TestBuildCleanerPrompt:
         assert "桐桐" in prompt
         assert "Claude Code" in prompt
         assert "张三" in prompt
-        assert "优先匹配" in prompt
+        assert "仅供参考" in prompt
         assert "专有名词" in prompt
 
     def test_max_50_words(self):
@@ -167,113 +166,10 @@ class TestBuildCleanerPrompt:
 
 
 class TestApplyDictionaryCorrection:
-    """测试词典校正（前置处理）"""
-
-    def setup_method(self):
-        """每个测试前手动设置缓存模拟词典"""
-        import app.api.dictionary as d
-        # 模拟词典缓存
-        d.dictionary_cache = {
-            "tongtong": "桐桐",
-            "zhangsan": "张三",
-            "like": "尼克",
-        }
-        d.dictionary_words = {"桐桐", "张三", "尼克"}
-        d._fuzzy_pinyin_cache = {
-            normalize_pinyin(k): v for k, v in d.dictionary_cache.items()
-        }
-
-    def teardown_method(self):
-        """每个测试后清理缓存"""
-        import app.api.dictionary as d
-        d.dictionary_cache = {}
-        d.dictionary_words = set()
-        d._fuzzy_pinyin_cache = {}
+    """测试词典校正（已废弃，仅保留用于前端功能）"""
 
     def test_noop_empty_cache(self):
         import app.api.dictionary as d
         d.dictionary_cache = {}
         d.dictionary_words = set()
         assert apply_dictionary_correction("今天带桐桐出去玩") == "今天带桐桐出去玩"
-
-    def test_exact_pinyin_match(self):
-        """完全拼音匹配：通通 → 桐桐"""
-        result = apply_dictionary_correction("今天带通通出去玩")
-        assert result == "今天带桐桐出去玩"
-
-    def test_exact_word_preserve(self):
-        """已有正确词，直接保留"""
-        result = apply_dictionary_correction("今天带桐桐出去玩")
-        assert result == "今天带桐桐出去玩"
-
-    def test_n_l_confusion(self):
-        """声母近音：n/l 混淆（编辑距离兜底，阈值 0.6）"""
-        import app.api.dictionary as d
-        # 楠楠 pinyin: "nannan", 兰兰 pinyin: "lanlan"
-        # Levenshtein 距离 2, 相似度 0.667 >= 0.6 → 匹配
-        d.dictionary_cache = {"nannan": "楠楠"}
-        d.dictionary_words = {"楠楠"}
-        d._fuzzy_pinyin_cache = {
-            normalize_pinyin(k): v for k, v in d.dictionary_cache.items()
-        }
-        result = apply_dictionary_correction("今天带兰兰出去玩")
-        assert result == "今天带楠楠出去玩"
-
-    def test_fuzzy_edit_distance_match(self):
-        """编辑距离模糊匹配"""
-        import app.api.dictionary as d
-        # 设置高阈值确保匹配
-        d.dictionary_cache = {"tongtogn": "桐桐根"}
-        d.dictionary_words = {"桐桐根"}
-        d._fuzzy_pinyin_cache = {
-            normalize_pinyin(k): v for k, v in d.dictionary_cache.items()
-        }
-        result = apply_dictionary_correction("tongtogn")
-        # 应该直接找到完全拼音匹配
-        assert "桐" in result
-
-    def test_no_match_keep_original(self):
-        """无匹配时保持原文"""
-        result = apply_dictionary_correction("abcdefghijklmnop")
-        assert result == "abcdefghijklmnop"
-
-
-class TestPostCorrect:
-    """测试后处理安全网"""
-
-    def setup_method(self):
-        import app.api.dictionary as d
-        d.dictionary_cache = {
-            "tongtong": "桐桐",
-            "zhangsan": "张三",
-        }
-        d.dictionary_words = {"桐桐", "张三"}
-
-    def teardown_method(self):
-        import app.api.dictionary as d
-        d.dictionary_cache = {}
-        d.dictionary_words = set()
-
-    def test_already_correct(self):
-        """词已正确出现，不做修改"""
-        text = "今天我带桐桐去了公园"
-        result = post_correct(text, ["桐桐"])
-        assert result == text
-
-    def test_fix_missing_word(self):
-        """词未出现但同音片段存在时修正"""
-        text = "今天我带通通去了公园"
-        result = post_correct(text, ["桐桐"])
-        assert "桐桐" in result or result == text
-
-    def test_no_change_if_no_match(self):
-        """无匹配时保持原样"""
-        text = "今天天气很好"
-        result = post_correct(text, ["桐桐"])
-        assert result == text
-
-    def test_skip_already_dict_word(self):
-        """跳过已经是其他词典词的片段"""
-        text = "张三"
-        result = post_correct(text, ["桐桐", "张三"])
-        assert result == "张三"

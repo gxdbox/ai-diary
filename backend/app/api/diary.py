@@ -20,7 +20,6 @@ from app.services.ai_service import ai_service
 from app.services.text_cleaner import text_cleaner
 from app.services.vector_store import vector_store
 from app.services import oss_service
-from app.services.oss_service import OSSService
 
 router = APIRouter()
 
@@ -94,7 +93,6 @@ async def create_diary(
         # 创建日记记录
         diary = Diary(
             raw_text=request.raw_text,
-            title=analysis.get("title"),
             cleaned_text=cleaned_text,
             emotion=analysis["emotion"].get("emotion"),
             emotion_score=analysis["emotion"].get("intensity"),  # 兼容：用 intensity 作为旧 score
@@ -291,9 +289,8 @@ async def delete_diary(
     """
     删除日记
     """
-    # 先读取 oss keys 和 audio_url（在 DB 删除前读取）
+    # 先读取 oss keys（在 DB 删除前读取）
     oss_keys = None
-    audio_url = None
     try:
         result = await db.execute(
             select(Diary).where(Diary.id == diary_id)
@@ -309,9 +306,6 @@ async def delete_diary(
                 oss_keys = json.loads(diary.images)
             except:
                 pass
-        
-        # 保存音频URL用于事务外清理
-        audio_url = diary.audio_url
 
         await db.delete(diary)
         await db.commit()
@@ -331,13 +325,6 @@ async def delete_diary(
             oss_service.batch_delete(oss_keys)
         except Exception as e:
             print(f"[OSS] cleanup failed for diary {diary_id}: {e}")
-    
-    # 删除音频文件
-    if audio_url:
-        try:
-            oss_service.delete(audio_url)
-        except Exception as e:
-            print(f"[OSS] audio cleanup failed for diary {diary_id}: {e}")
 
     return {"message": "删除成功", "id": diary_id}
 
@@ -366,7 +353,6 @@ async def update_diary(
 
         # 重新分析
         analysis = await ai_service.full_analysis(cleaned_text)
-        diary.title = analysis.get("title")
         diary.emotion = analysis["emotion"].get("emotion")
         diary.emotion_score = analysis["emotion"].get("intensity")  # 兼容
         diary.emotion_energy = analysis["emotion"].get("energy")
@@ -419,7 +405,6 @@ def _diary_to_response(diary: Diary) -> DiaryResponse:
     return DiaryResponse(
         id=diary.id,
         raw_text=diary.raw_text,
-        title=diary.title,
         cleaned_text=diary.cleaned_text,
         emotion=diary.emotion,
         emotion_score=diary.emotion_score,
@@ -432,7 +417,6 @@ def _diary_to_response(diary: Diary) -> DiaryResponse:
         topics=json.loads(diary.topics) if diary.topics else [],
         key_events=json.loads(diary.key_events) if diary.key_events else [],
         recording_duration=diary.recording_duration,
-        audio_url=diary.audio_url,
         word_count=diary.word_count,
         weather=json.loads(diary.weather) if diary.weather else None,
         images=image_urls,
@@ -582,80 +566,3 @@ async def update_weather(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"更新天气失败: {str(e)}")
-
-
-# ============ 音频相关端点 ============
-
-@router.post("/{diary_id}/audio", response_model=DiaryResponse)
-async def upload_diary_audio(
-    diary_id: int,
-    audio_file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    上传日记音频文件到OSS
-    
-    1. 查询日记
-    2. 验证并上传音频到OSS
-    3. 保存音频URL到数据库
-    4. 返回更新后的日记
-    """
-    try:
-        # 查询日记
-        result = await db.execute(select(Diary).where(Diary.id == diary_id))
-        diary = result.scalar_one_or_none()
-
-        if not diary:
-            raise HTTPException(status_code=404, detail="日记不存在")
-
-        # 上传音频到OSS（使用OSSService类）
-        audio_oss_service = OSSService()
-        oss_url = await audio_oss_service.upload(audio_file)
-
-        # 保存音频URL到数据库
-        diary.audio_url = oss_url
-        diary.updated_at = datetime.utcnow()
-        await db.commit()
-        await db.refresh(diary)
-
-        return _diary_to_response(diary)
-
-    except (HTTPException, ValueError, RuntimeError):
-        raise
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=500, detail=f"音频上传失败: {str(e)}")
-
-
-@router.get("/{diary_id}/audio-url")
-async def get_diary_audio_url(
-    diary_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    获取日记音频的签名URL
-    
-    1. 查询日记获取audio_url
-    2. 生成签名URL（1小时有效）
-    3. 返回签名URL
-    """
-    try:
-        result = await db.execute(select(Diary).where(Diary.id == diary_id))
-        diary = result.scalar_one_or_none()
-
-        if not diary:
-            raise HTTPException(status_code=404, detail="日记不存在")
-
-        if not diary.audio_url:
-            raise HTTPException(status_code=404, detail="该日记没有关联音频")
-
-        # 生成签名URL（使用OSSService类）
-        audio_oss_service = OSSService()
-        signed_url = audio_oss_service.get_signed_url(diary.audio_url)
-
-        return {"audio_url": signed_url}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取音频URL失败: {str(e)}")

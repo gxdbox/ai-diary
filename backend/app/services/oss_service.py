@@ -147,18 +147,12 @@ class OSSService:
     def _init_bucket(self):
         """初始化 OSS Bucket，认证失败不阻塞启动"""
         try:
-            print(f"[OSS] 开始初始化音频Bucket: bucket={self.bucket_name}, endpoint={self.endpoint}, region={self.region}")
             auth = self._create_auth()
             self.bucket = oss2.Bucket(
                 auth, f"https://{self.endpoint}", self.bucket_name, region=self.region
             )
-            # 测试连接
-            self.bucket.get_bucket_info()
-            print(f"[OSS] 音频Bucket初始化成功")
         except Exception as e:
-            print(f"[OSS] 初始化失败（音频功能不可用）: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[OSS] 初始化失败（音频功能不可用）: {e}")
             self.bucket = None
 
     def _ensure_bucket(self):
@@ -171,7 +165,6 @@ class OSSService:
         # 1. ECS RAM 角色（生产环境）
         if self.ram_role_name:
             try:
-                print(f"[OSS] 尝试使用ECS RAM角色: {self.ram_role_name}")
                 ecs_metadata_url = (
                     "http://100.100.100.200/latest/meta-data/"
                     f"ram/security-credentials/{self.ram_role_name}"
@@ -181,13 +174,12 @@ class OSSService:
                 )
                 return oss2.ProviderAuthV4(credentials)
             except Exception as e:
-                print(f"[OSS] ECS RAM 角色认证失败，回落 AccessKey: {type(e).__name__}: {e}")
+                print(f"[OSS] ECS RAM 角色认证失败，回落 AccessKey: {e}")
 
         # 2. 回落 AccessKey（开发环境）
         ak = os.getenv("OSS_ACCESS_KEY_ID")
         sk = os.getenv("OSS_ACCESS_KEY_SECRET")
         if ak and sk:
-            print(f"[OSS] 使用AccessKey认证")
             return oss2.Auth(ak, sk)
 
         raise RuntimeError("OSS 认证失败：无 ECS RAM 角色且无 AccessKey")
@@ -209,60 +201,38 @@ class OSSService:
 
     async def upload(self, file: UploadFile) -> str:
         """上传音频到 OSS，返回完整 OSS URL"""
-        try:
-            print(f"[OSS] 开始上传音频: filename={file.filename}, size={getattr(file, 'size', 'unknown')}")
-            self._ensure_bucket()
-            self._validate(file)
+        self._ensure_bucket()
+        self._validate(file)
 
-            now = datetime.utcnow()
-            ext = (
-                file.filename.rsplit(".", 1)[-1].lower()
-                if file.filename and "." in file.filename
-                else "m4a"
-            )
-            key = f"audio/{now.year}/{now.month:02d}/{now.day:02d}/{uuid.uuid4().hex}.{ext}"
+        now = datetime.utcnow()
+        ext = (
+            file.filename.rsplit(".", 1)[-1].lower()
+            if file.filename and "." in file.filename
+            else "m4a"
+        )
+        key = f"audio/{now.year}/{now.month:02d}/{now.day:02d}/{uuid.uuid4().hex}.{ext}"
 
-            content = await file.read()
-            print(f"[OSS] 上传到key: {key}, 大小: {len(content)} bytes")
-            self.bucket.put_object(key, content)
-            
-            url = f"https://{self.bucket_name}.{self.endpoint}/{key}"
-            print(f"[OSS] 上传成功: {url}")
-            return url
-        except Exception as e:
-            print(f"[OSS] 上传失败: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
+        content = await file.read()
+        self.bucket.put_object(key, content)
+
+        return f"https://{self.bucket_name}.{self.endpoint}/{key}"
 
     def get_signed_url(self, url: str, expires: int = 3600) -> str:
         """生成私有 Bucket 的临时签名 URL（默认 1 小时有效）"""
-        try:
-            self._ensure_bucket()
-            prefix = f"https://{self.bucket_name}.{self.endpoint}/"
-            if url.startswith(prefix):
-                key = url[len(prefix):]
-                print(f"[OSS] 生成签名URL: key={key}, expires={expires}")
-                signed = self.bucket.sign_url("GET", key, expires)
-                return signed
-            return url
-        except Exception as e:
-            print(f"[OSS] 生成签名URL失败: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
+        self._ensure_bucket()
+        prefix = f"https://{self.bucket_name}.{self.endpoint}/"
+        if url.startswith(prefix):
+            key = url[len(prefix) :]
+            return self.bucket.sign_url("GET", key, expires)
+        return url
 
     def delete(self, url: str) -> None:
         """从 OSS 删除音频文件"""
-        try:
-            self._ensure_bucket()
-            prefix = f"https://{self.bucket_name}.{self.endpoint}/"
-            if url.startswith(prefix):
-                key = url[len(prefix):]
-                print(f"[OSS] 删除音频: key={key}")
-                self.bucket.delete_object(key)
-        except Exception as e:
-            print(f"[OSS] 删除音频失败: {type(e).__name__}: {e}")
+        self._ensure_bucket()
+        prefix = f"https://{self.bucket_name}.{self.endpoint}/"
+        if url.startswith(prefix):
+            key = url[len(prefix) :]
+            self.bucket.delete_object(key)
 
 
 # 模块级单例

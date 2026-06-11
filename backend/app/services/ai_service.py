@@ -42,36 +42,26 @@ class AIService:
     async def clean_text(self, raw_text: str) -> str:
         """清洗语音转写文本 — 使用 System Prompt 纠正 ASR 同音词错误
 
-        三层处理流程：
-        1. 前置：拼音模糊匹配 + 发音混淆规则矫正
-        2. AI：注入自定义词典到 System Prompt，让 LLM 语义级纠错
-        3. 后置：检查输出中词典词是否已正确出现，兜底修正
+        处理流程：
+        - 将自定义词典注入到 System Prompt，作为 AI 的纠错参考
+        - AI 根据上下文语义判断是否需要纠正（不会强行替换）
+        - 移除前置/后置强制替换逻辑，避免破坏原文
         """
-        from app.api.dictionary import (
-            dictionary_words, apply_dictionary_correction, post_correct
-        )
+        from app.api.dictionary import dictionary_words
 
-        # 1. 前置处理：拼音/近音/英文匹配
-        corrected_text = apply_dictionary_correction(raw_text)
-
-        # 2. AI 清洗：注入自定义词典
+        # 构建 System Prompt（注入自定义词典作为参考）
         system_prompt = build_cleaner_prompt(
             list(dictionary_words) if dictionary_words else None
         )
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": CLEAN_TEXT_USER_TEMPLATE.format(text=corrected_text)},
+            {"role": "user", "content": CLEAN_TEXT_USER_TEMPLATE.format(text=raw_text)},
         ]
 
         result = await self.call_llm_with_messages(
             messages, max_tokens=2000, temperature=0.2
         )
-        result = result.strip()
-
-        # 3. 后置处理：词典词兜底检查
-        result = post_correct(result, list(dictionary_words))
-
-        return result
+        return result.strip()
 
     async def analyze_emotion(self, text: str) -> Dict:
         """分析文本情绪 - 使用能量值+强度双维度体系"""
@@ -214,36 +204,14 @@ class AIService:
         events = [e.strip() for e in result.strip().split("\n") if e.strip()]
         return events[:3]
 
-    async def generate_title(self, text: str) -> str:
-        """根据日记内容生成简短标题"""
-        prompt = f"""请为以下日记内容生成一个简短的标题（不超过15个字）。
-
-日记内容：
-{text}
-
-要求：
-- 简洁明了，概括主要内容或核心情绪
-- 不超过15个汉字
-- 不要加标点符号
-- 避免使用"今天"、"日记"等无意义词语
-
-仅返回标题文本，不要其他内容。"""
-
-        result = await self.call_llm(prompt, max_tokens=50)
-        title = result.strip()[:15]
-        # 去除可能的标点符号
-        title = title.rstrip("。，、；：！？.!?")
-        return title if title else "无标题日记"
-
     async def full_analysis(self, text: str) -> Dict:
-        """完整分析：情绪、主题、事件、标题 - 并行执行"""
-        emotion, topics, events, title = await asyncio.gather(
+        """完整分析：情绪、主题、事件 - 并行执行"""
+        emotion, topics, events = await asyncio.gather(
             self.analyze_emotion(text),
             self.extract_topics(text),
             self.extract_key_events(text),
-            self.generate_title(text),
         )
-        return {"emotion": emotion, "topics": topics, "key_events": events, "title": title}
+        return {"emotion": emotion, "topics": topics, "key_events": events}
 
     async def answer_question(self, question: str, context: str) -> str:
         """基于上下文回答问题（RAG）"""
