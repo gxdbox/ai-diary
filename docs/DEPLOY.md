@@ -240,7 +240,270 @@ sudo firewall-cmd --reload
 curl https://your-domain.com/health
 ```
 
-## 八、修改 iOS App 配置
+## 八、配置 Sentry 错误追踪（推荐）
+
+Sentry 提供实时错误监控和告警功能，帮助快速定位生产环境问题。
+
+### 1. 注册 Sentry 账号
+
+访问 [https://sentry.io/signup/](https://sentry.io/signup/) 免费注册账号。
+
+### 2. 创建新项目
+
+- 登录后点击 "Create Project"
+- 选择 **FastAPI** 框架
+- 设置项目名称为 "AI Diary"
+- 复制生成的 DSN（格式：`https://xxx@sentry.io/xxx`）
+
+### 3. 配置环境变量
+
+在服务器的 `.env` 文件中添加：
+
+```bash
+# 编辑 .env 文件
+vi ~/ai-diary/.env
+
+# 添加以下行（替换为你的 DSN）
+SENTRY_DSN=https://your-sentry-dsn@sentry.io/project-id
+```
+
+### 4. 重启服务
+
+```bash
+# 使用 systemd 重启
+sudo systemctl restart ai-diary
+
+# 查看启动日志确认 Sentry 初始化成功
+sudo journalctl -u ai-diary -f
+```
+
+### 5. 验证配置
+
+访问 Sentry Dashboard，触发一个测试错误后应该能看到实时上报：
+
+```bash
+# 触发测试错误（可选）
+curl https://your-domain.com/api/nonexistent-endpoint
+```
+
+### 免费额度说明
+
+- **免费计划**：每月 5,000 个错误事件
+- **适合场景**：小型项目和个人应用完全够用
+- **采样率调整**：如果流量较大，可在 `main.py` 中调整 `traces_sample_rate=0.1` 降低成本
+
+### 注意事项
+
+1. ✅ Sentry 仅在 `APP_ENV=production` 时启用，开发环境不会上报错误
+2. ✅ DSN 通过环境变量管理，不会硬编码到代码中
+3. ✅ 自动捕获未处理异常、HTTP 5xx 错误、性能数据
+4. ⚠️ 如需关闭 Sentry，只需删除 `.env` 中的 `SENTRY_DSN` 或设置为空字符串
+
+## 十、配置 Prometheus + Grafana 监控（可选）
+
+Prometheus 提供实时性能指标监控，Grafana 提供可视化 Dashboard。
+
+### 方式1: 使用 Docker Compose（推荐）
+
+#### 10.1 创建监控配置文件
+
+在服务器上创建 `docker-compose.monitoring.yml`：
+
+```yaml
+version: '3.8'
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=your-secure-password
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+```
+
+创建 `prometheus.yml`：
+
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'ai-diary'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['localhost:8000']
+```
+
+#### 10.2 启动监控栈
+
+```bash
+cd ~/ai-diary
+sudo docker-compose -f docker-compose.monitoring.yml up -d
+```
+
+#### 10.3 访问 Grafana
+
+1. 浏览器访问：`http://服务器IP:3000`
+2. 默认账号：`admin` / `your-secure-password`
+3. 添加 Prometheus 数据源：
+   - 点击 "Configuration" → "Data Sources" → "Add data source"
+   - 选择 "Prometheus"
+   - URL 填写：`http://prometheus:9090`
+   - 点击 "Save & Test"
+
+#### 10.4 导入 Dashboard
+
+**选项A：使用现成模板**
+- 访问 [Grafana Dashboards](https://grafana.com/grafana/dashboards/)
+- 搜索 "FastAPI" 或 "Python Application"
+- 推荐 ID：`13769` (FastAPI Observability)
+- 导入后选择 Prometheus 数据源
+
+**选项B：手动创建**
+- 点击 "Create" → "Dashboard" → "Add new panel"
+- 常用查询示例：
+  ```promql
+  # 请求总数
+  sum(http_requests_total) by (method, handler)
+  
+  # 平均响应时间
+  histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+  
+  # 错误率
+  sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+  
+  # QPS
+  rate(http_requests_total[1m])
+  ```
+
+### 方式2: 直接访问指标
+
+如果不需要复杂的可视化，可以直接查看原始指标：
+
+```bash
+# 访问指标端点
+curl http://localhost:8000/metrics
+
+# 或在浏览器中打开
+http://localhost:8000/metrics
+```
+
+**常用指标说明：**
+
+| 指标名称 | 说明 |
+|---------|------|
+| `http_requests_total` | HTTP 请求总数（按方法、路径、状态码分类） |
+| `http_request_duration_seconds` | 请求耗时分布（直方图） |
+| `http_response_size_bytes` | 响应大小分布（直方图） |
+| `process_cpu_seconds_total` | CPU 使用时间 |
+| `process_resident_memory_bytes` | 内存占用 |
+
+### 安全建议
+
+⚠️ **生产环境必须限制 `/metrics` 端点访问！**
+
+#### 方案1：Nginx IP 白名单
+
+编辑 Nginx 配置 `/etc/nginx/conf.d/ai-diary.conf`：
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    # ... SSL 配置 ...
+
+    # 限制 /metrics 仅允许内网访问
+    location /metrics {
+        allow 127.0.0.1;
+        allow 10.0.0.0/8;      # 内网段
+        allow 172.16.0.0/12;   # 内网段
+        allow 192.168.0.0/16;  # 内网段
+        deny all;
+        
+        proxy_pass http://127.0.0.1:8000;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        # ... 其他配置 ...
+    }
+}
+```
+
+重启 Nginx：
+
+```bash
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+#### 方案2：Basic Auth 认证
+
+```nginx
+location /metrics {
+    auth_basic "Prometheus Metrics";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+    
+    proxy_pass http://127.0.0.1:8000;
+}
+```
+
+生成密码文件：
+
+```bash
+sudo yum install -y httpd-tools
+sudo htpasswd -c /etc/nginx/.htpasswd prometheus
+# 输入密码
+sudo systemctl restart nginx
+```
+
+### 故障排查
+
+```bash
+# 检查 Prometheus 是否正常运行
+sudo docker ps | grep prometheus
+
+# 查看 Prometheus 日志
+sudo docker logs prometheus
+
+# 验证指标端点是否可访问
+curl http://localhost:8000/metrics | head -20
+
+# 检查 Prometheus 是否正确抓取数据
+# 访问 http://服务器IP:9090/targets 查看目标状态
+
+# 查看 Grafana 日志
+sudo docker logs grafana
+```
+
+### 免费资源说明
+
+- **Prometheus**: 开源免费，本地部署无限制
+- **Grafana**: 开源免费版本功能完整，足够个人和小团队使用
+- **存储**: 默认保留 30 天数据，可根据磁盘空间调整 `retention.time`
+
+## 十一、修改 iOS App 配置
 
 修改 `iOS/AIDiary/AIDiary/Config/AppConfig.swift`:
 
@@ -250,7 +513,7 @@ static let environment: Environment = .production  // 改为 production
 
 并将 `.production` 的 `baseURL` 改为你的域名。
 
-## 九、配置自动备份
+## 十、配置自动备份
 
 ### 1. 备份脚本说明
 
