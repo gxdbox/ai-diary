@@ -130,6 +130,10 @@ async def health_check():
     # 2. 检查 ChromaDB 连通性
     try:
         from app.services.vector_store import vector_store
+        # 确保已初始化
+        if not vector_store._initialized:
+            vector_store.init()
+        
         collections = vector_store.client.list_collections()
         checks["chromadb"] = {
             "status": "ok", 
