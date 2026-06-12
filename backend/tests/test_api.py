@@ -15,10 +15,30 @@ async def client():
 
 @pytest.mark.asyncio
 async def test_health_check(client):
-    """测试健康检查"""
+    """测试深度健康检查"""
     response = await client.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
+    data = response.json()
+    
+    # 验证返回结构
+    assert "status" in data
+    assert "timestamp" in data
+    assert "checks" in data
+    
+    # 验证状态值合法
+    assert data["status"] in ["healthy", "degraded", "unhealthy"]
+    
+    # 验证各个检查项存在
+    checks = data["checks"]
+    assert "database" in checks
+    assert "chromadb" in checks
+    assert "disk_space" in checks
+    
+    # 验证每个检查项都有 status 和 message
+    for check_name, check_data in checks.items():
+        assert "status" in check_data
+        assert "message" in check_data
+        assert check_data["status"] in ["ok", "warning", "error"]
 
 
 @pytest.mark.asyncio

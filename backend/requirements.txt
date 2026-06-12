@@ -28,3 +28,12 @@ python-dateutil==2.8.2
 
 # OSS Storage
 oss2==2.18.5
+
+# Error Tracking
+sentry-sdk[fastapi]>=1.40.0
+
+# Health Check
+aiohttp>=3.8.0
+
+# Monitoring
+prometheus-fastapi-instrumentator>=6.1.0
