@@ -21,8 +21,11 @@ if os.getenv("APP_ENV") == "production" and os.getenv("SENTRY_DSN"):
         traces_sample_rate=1.0,
         profiles_sample_rate=1.0,
         environment=os.getenv("APP_ENV", "production"),
-        release="ai-diary@1.0.0"
+        release="ai-diary@1.0.0",
+        send_default_pii=True  # 包含用户信息(可选)
     )
+    import logging
+    logging.getLogger(__name__).info("Sentry initialized successfully in production mode")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,6 +61,7 @@ root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
 
 from app.api import diary, analysis, search, dictionary, assistant, companion, world
+from app.api.test_sentry import router as test_router
 from app.db.database import init_db, async_session_maker
 from app.services.oss_service import oss_service
 
@@ -92,6 +96,7 @@ app.include_router(dictionary.router, prefix="/api/dictionary", tags=["词典"])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["智能助手"])
 app.include_router(companion.router, prefix="/api/companion", tags=["情感陪伴"])
 app.include_router(world.router, tags=["虚拟世界"])
+app.include_router(test_router, tags=["测试"])
 
 
 @app.on_event("startup")

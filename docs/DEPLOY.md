@@ -277,14 +277,38 @@ sudo systemctl restart ai-diary
 sudo journalctl -u ai-diary -f
 ```
 
-### 5. 验证配置
+### 5. 验证 Sentry 集成
 
-访问 Sentry Dashboard，触发一个测试错误后应该能看到实时上报：
+#### 5.1 触发测试错误
+
+重启服务后,访问测试端点触发错误:
 
 ```bash
-# 触发测试错误（可选）
-curl https://your-domain.com/api/nonexistent-endpoint
+curl https://51pic.xyz/test/sentry-error
 ```
+
+该端点会触发 `ZeroDivisionError`,Sentry 应该自动捕获并上报。
+
+#### 5.2 检查 Sentry Dashboard
+
+1. 登录 Sentry Dashboard: https://sentry.io/organizations/your-org/issues/
+
+2. 应该在 "Issues" 页面看到新的错误报告:
+   - **错误类型**: ZeroDivisionError
+   - **消息**: division by zero
+   - **请求路径**: /test/sentry-error
+
+3. 点击错误详情可以看到:
+   - 完整的堆栈跟踪
+   - 请求参数和 headers
+   - 用户 IP 地址(如果启用了 send_default_pii)
+   - 环境变量信息
+
+#### 5.3 注意事项
+
+- ✅ 测试完成后可以删除 `/test/sentry-error` 端点或限制访问
+- ⚠️ 生产环境建议移除测试端点,避免被滥用
+- ℹ️ `send_default_pii=True` 会发送用户 IP 等敏感信息,根据隐私政策决定是否启用
 
 ### 免费额度说明
 
@@ -299,209 +323,51 @@ curl https://your-domain.com/api/nonexistent-endpoint
 3. ✅ 自动捕获未处理异常、HTTP 5xx 错误、性能数据
 4. ⚠️ 如需关闭 Sentry，只需删除 `.env` 中的 `SENTRY_DSN` 或设置为空字符串
 
-## 十、配置 Prometheus + Grafana 监控（可选）
+## 十、配置 Prometheus + Grafana 监控
 
-Prometheus 提供实时性能指标监控，Grafana 提供可视化 Dashboard。
+Prometheus 提供实时性能指标监控,Grafana 提供可视化 Dashboard。
 
-### 方式1: 使用 Docker Compose（推荐）
+### 快速开始
 
-#### 10.1 创建监控配置文件
+详细的配置指南和故障排查请查看: [PROMETHEUS_GRAFANA_SETUP.md](./PROMETHEUS_GRAFANA_SETUP.md)
 
-在服务器上创建 `docker-compose.monitoring.yml`：
+**访问地址:**
+- Prometheus: http://8.136.124.182:9090
+- Grafana: http://8.136.124.182:3002 (admin / ai-diary-admin-2026)
 
-```yaml
-version: '3.8'
-services:
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=30d'
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=your-secure-password
-    volumes:
-      - grafana_data:/var/lib/grafana
-    restart: unless-stopped
-
-volumes:
-  prometheus_data:
-  grafana_data:
-```
-
-创建 `prometheus.yml`：
-
-```yaml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-
-scrape_configs:
-  - job_name: 'ai-diary'
-    metrics_path: '/metrics'
-    static_configs:
-      - targets: ['localhost:8000']
-```
-
-#### 10.2 启动监控栈
+### 部署命令
 
 ```bash
+# 在服务器上执行
 cd ~/ai-diary
-sudo docker-compose -f docker-compose.monitoring.yml up -d
+docker compose -f docker-compose.monitoring.yml up -d
 ```
 
-#### 10.3 访问 Grafana
+### 配置文件
 
-1. 浏览器访问：`http://服务器IP:3000`
-2. 默认账号：`admin` / `your-secure-password`
-3. 添加 Prometheus 数据源：
-   - 点击 "Configuration" → "Data Sources" → "Add data source"
-   - 选择 "Prometheus"
-   - URL 填写：`http://prometheus:9090`
-   - 点击 "Save & Test"
+项目根目录包含以下配置文件:
+- `docker-compose.monitoring.yml` - 容器编排配置
+- `prometheus.yml` - Prometheus 主配置
+- `alert_rules.yml` - 告警规则(占位)
 
-#### 10.4 导入 Dashboard
-
-**选项A：使用现成模板**
-- 访问 [Grafana Dashboards](https://grafana.com/grafana/dashboards/)
-- 搜索 "FastAPI" 或 "Python Application"
-- 推荐 ID：`13769` (FastAPI Observability)
-- 导入后选择 Prometheus 数据源
-
-**选项B：手动创建**
-- 点击 "Create" → "Dashboard" → "Add new panel"
-- 常用查询示例：
-  ```promql
-  # 请求总数
-  sum(http_requests_total) by (method, handler)
-  
-  # 平均响应时间
-  histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
-  
-  # 错误率
-  sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
-  
-  # QPS
-  rate(http_requests_total[1m])
-  ```
-
-### 方式2: 直接访问指标
-
-如果不需要复杂的可视化，可以直接查看原始指标：
+### 验证部署
 
 ```bash
-# 访问指标端点
-curl http://localhost:8000/metrics
+# 检查容器状态
+ssh root@8.136.124.182 "docker ps | grep -E 'prometheus|grafana'"
 
-# 或在浏览器中打开
-http://localhost:8000/metrics
+# 检查 Prometheus target 状态
+ssh root@8.136.124.182 "curl -s 'http://localhost:9090/api/v1/targets' | python3 -m json.tool"
+
+# 检查 Grafana 健康状态
+ssh root@8.136.124.182 "curl -s http://localhost:3002/api/health"
 ```
-
-**常用指标说明：**
-
-| 指标名称 | 说明 |
-|---------|------|
-| `http_requests_total` | HTTP 请求总数（按方法、路径、状态码分类） |
-| `http_request_duration_seconds` | 请求耗时分布（直方图） |
-| `http_response_size_bytes` | 响应大小分布（直方图） |
-| `process_cpu_seconds_total` | CPU 使用时间 |
-| `process_resident_memory_bytes` | 内存占用 |
 
 ### 安全建议
 
-⚠️ **生产环境必须限制 `/metrics` 端点访问！**
+⚠️ **生产环境必须限制 `/metrics` 端点访问!**
 
-#### 方案1：Nginx IP 白名单
-
-编辑 Nginx 配置 `/etc/nginx/conf.d/ai-diary.conf`：
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
-
-    # ... SSL 配置 ...
-
-    # 限制 /metrics 仅允许内网访问
-    location /metrics {
-        allow 127.0.0.1;
-        allow 10.0.0.0/8;      # 内网段
-        allow 172.16.0.0/12;   # 内网段
-        allow 192.168.0.0/16;  # 内网段
-        deny all;
-        
-        proxy_pass http://127.0.0.1:8000;
-    }
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        # ... 其他配置 ...
-    }
-}
-```
-
-重启 Nginx：
-
-```bash
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
-#### 方案2：Basic Auth 认证
-
-```nginx
-location /metrics {
-    auth_basic "Prometheus Metrics";
-    auth_basic_user_file /etc/nginx/.htpasswd;
-    
-    proxy_pass http://127.0.0.1:8000;
-}
-```
-
-生成密码文件：
-
-```bash
-sudo yum install -y httpd-tools
-sudo htpasswd -c /etc/nginx/.htpasswd prometheus
-# 输入密码
-sudo systemctl restart nginx
-```
-
-### 故障排查
-
-```bash
-# 检查 Prometheus 是否正常运行
-sudo docker ps | grep prometheus
-
-# 查看 Prometheus 日志
-sudo docker logs prometheus
-
-# 验证指标端点是否可访问
-curl http://localhost:8000/metrics | head -20
-
-# 检查 Prometheus 是否正确抓取数据
-# 访问 http://服务器IP:9090/targets 查看目标状态
-
-# 查看 Grafana 日志
-sudo docker logs grafana
-```
-
-### 免费资源说明
-
-- **Prometheus**: 开源免费，本地部署无限制
-- **Grafana**: 开源免费版本功能完整，足够个人和小团队使用
-- **存储**: 默认保留 30 天数据，可根据磁盘空间调整 `retention.time`
+详见 [PROMETHEUS_GRAFANA_SETUP.md](./PROMETHEUS_GRAFANA_SETUP.md) 中的"安全建议"章节。
 
 ## 十一、修改 iOS App 配置
 
@@ -517,16 +383,40 @@ static let environment: Environment = .production  // 改为 production
 
 ### 1. 备份脚本说明
 
-项目提供了自动备份脚本 `scripts/backup_database.sh`，可以定期备份 SQLite 数据库和 ChromaDB 向量数据。
+项目提供了自动备份脚本 `scripts/backup_database.sh`,可以定期备份 SQLite 数据库和 ChromaDB 向量数据。
 
-**功能特性：**
+**功能特性:**
 - ✅ 自动备份 SQLite 数据库 (`ai_diary.db`)
 - ✅ 自动备份 ChromaDB 向量数据 (`chroma_data/`)
-- ✅ 保留最近 7 天的备份，自动清理旧备份
-- ✅ 详细的日志记录（输出到控制台和日志文件）
+- ✅ 保留最近 7 天的本地备份,自动清理旧备份
+- ✅ **支持上传到阿里云 OSS,实现异地容灾**(详见 [OSS_BACKUP_SETUP.md](./OSS_BACKUP_SETUP.md))
+- ✅ 详细的日志记录(输出到控制台和日志文件)
 - ✅ 错误处理和验证机制
 
-### 2. 配置定时任务
+### 2. 配置环境变量
+
+在服务器的 `.env` 文件中配置 OSS 凭据(可选):
+
+```bash
+ssh root@8.136.124.182
+cd /root/ai-diary
+vi .env
+```
+
+添加以下配置:
+
+```bash
+# 阿里云 OSS 备份配置(可选,不配置则仅本地备份)
+OSS_ACCESS_KEY_ID=your_access_key_id
+OSS_ACCESS_KEY_SECRET=your_access_key_secret
+OSS_BACKUP_BUCKET_NAME=ai-diary-backups
+OSS_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
+OSS_BACKUP_PATH=backups/
+```
+
+**详细配置指南**: 查看 [OSS_BACKUP_SETUP.md](./OSS_BACKUP_SETUP.md)
+
+### 3. 配置定时任务
 
 在服务器上编辑 crontab：
 
@@ -542,7 +432,7 @@ ssh root@8.136.124.182 "crontab -e"
 
 保存并退出编辑器。
 
-### 3. 验证定时任务
+### 4. 验证定时任务
 
 ```bash
 # 查看已配置的定时任务
@@ -555,7 +445,7 @@ ssh root@8.136.124.182 "cd /root/ai-diary && ./scripts/backup_database.sh"
 ssh root@8.136.124.182 "ls -lh /root/ai-diary/backups/"
 ```
 
-### 4. 查看备份日志
+### 5. 查看备份日志
 
 ```bash
 # 实时查看备份日志
@@ -565,7 +455,7 @@ ssh root@8.136.124.182 "tail -f /root/ai-diary/logs/backup.log"
 ssh root@8.136.124.182 "cat /root/ai-diary/logs/backup.log"
 ```
 
-### 5. 恢复数据库
+### 6. 恢复数据库
 
 如果需要从备份恢复：
 
@@ -586,7 +476,7 @@ ssh root@8.136.124.182 "cd /root/ai-diary && nohup /opt/conda/bin/uvicorn app.ma
 curl https://51pic.xyz/health
 ```
 
-### 6. 备份文件命名规则
+### 7. 备份文件命名规则
 
 - **SQLite 备份**: `ai_diary_YYYYMMDD_HHMMSS.db`
 - **ChromaDB 备份**: `chroma_data_YYYYMMDD_HHMMSS.tar.gz`
@@ -596,6 +486,51 @@ curl https://51pic.xyz/health
 ai_diary_20250115_020000.db
 chroma_data_20250115_020000.tar.gz
 ```
+
+### 8. OSS 异地容灾备份
+
+如果配置了 OSS 凭据,备份脚本会自动上传到阿里云 OSS。查看详细配置:
+
+👉 **[OSS_BACKUP_SETUP.md](./OSS_BACKUP_SETUP.md)** - 完整的 OSS 配置、验证和恢复指南
+
+**快速验证 OSS 上传:**
+
+```bash
+# 手动执行备份(会同时上传到 OSS)
+ssh root@8.136.124.182 "cd /root/ai-diary && ./scripts/backup_database.sh"
+
+# 查看备份日志,确认 OSS 上传成功
+ssh root@8.136.124.182 "tail -20 /root/ai-diary/logs/backup.log"
+
+# 通过 ossutil 验证 OSS 中的备份文件
+ssh root@8.136.124.182 "ossutil ls oss://ai-diary-backups/backups/"
+```
+
+**从 OSS 恢复备份:**
+
+```bash
+# 停止服务
+ssh root@8.136.124.182 "sudo systemctl stop ai-diary"
+
+# 从 OSS 下载最新备份
+ssh root@8.136.124.182 "ossutil cp oss://ai-diary-backups/backups/database/ai_diary_YYYYMMDD_HHMMSS.db /tmp/"
+ssh root@8.136.124.182 "ossutil cp oss://ai-diary-backups/backups/chromadb/chroma_data_YYYYMMDD_HHMMSS.tar.gz /tmp/"
+
+# 恢复文件
+ssh root@8.136.124.182 "cp /tmp/ai_diary_*.db /root/ai-diary/ai_diary.db"
+ssh root@8.136.124.182 "tar xzf /tmp/chroma_data_*.tar.gz -C /root/ai-diary/"
+
+# 重启服务
+ssh root@8.136.124.182 "sudo systemctl start ai-diary"
+
+# 验证服务
+curl https://51pic.xyz/health
+```
+
+⚠️ **重要提示**: 
+- 建议每月测试一次 OSS 备份恢复流程,确保备份可用
+- 生产环境建议使用 RAM 用户而非主账号 AccessKey
+- 定期检查 OSS 存储费用,设置生命周期规则自动清理旧备份
 
 ## 常用命令
 
