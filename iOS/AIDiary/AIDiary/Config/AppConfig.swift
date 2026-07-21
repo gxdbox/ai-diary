@@ -9,7 +9,7 @@ enum AppEnvironment {
         case .development:
             return "http://192.168.0.2:8000"  // 本地开发
         case .production:
-            return "https://51pic.xyz"  // 生产环境
+            return "https://diary.151234.xyz"  // 生产环境（Mac Mini + ECS 反代）
         }
     }
 }
