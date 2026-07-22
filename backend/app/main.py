@@ -60,7 +60,7 @@ root_logger.setLevel(logging.INFO)
 root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
 
-from app.api import diary, analysis, search, dictionary, assistant, companion, world
+from app.api import diary, analysis, search, dictionary, assistant, companion, world, agent
 from app.api.test_sentry import router as test_router
 from app.db.database import init_db, async_session_maker
 from app.services.oss_service import oss_service
@@ -95,6 +95,7 @@ app.include_router(search.router, prefix="/api/search", tags=["搜索"])
 app.include_router(dictionary.router, prefix="/api/dictionary", tags=["词典"])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["智能助手"])
 app.include_router(companion.router, prefix="/api/companion", tags=["情感陪伴"])
+app.include_router(agent.router, prefix="/api/agent", tags=["智能 Agent"])
 app.include_router(world.router, tags=["虚拟世界"])
 app.include_router(test_router, tags=["测试"])
 

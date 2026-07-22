@@ -199,6 +199,29 @@ class APIService {
         return try decode(data)
     }
 
+    // MARK: - Agent 对话（借鉴 Hermes 的 tool-calling loop）
+    // Agent 会在需要时主动调用工具：搜日记、跑洞察、查/存记忆
+    func agentChat(message: String, conversationHistory: [[String: String]]? = nil, reflect: Bool = true) async throws -> AgentChatResponse {
+        let url = URL(string: "\(baseURL)/api/agent/chat")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        var body: [String: Any] = ["message": message, "reflect": reflect]
+        if let history = conversationHistory, !history.isEmpty {
+            body["conversation_history"] = history
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data)
+            throw NSError(domain: "", code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                userInfo: [NSLocalizedDescriptionKey: errorResponse?.detail ?? "Agent 对话失败"])
+        }
+        return try decode(data)
+    }
+
     func sendFeedback(memoryIds: [Int], wasHelpful: Bool) async throws {
         let urlString = "\(baseURL)/api/assistant/feedback"
         guard let url = URL(string: urlString) else {

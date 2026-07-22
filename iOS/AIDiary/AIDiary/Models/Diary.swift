@@ -257,6 +257,33 @@ struct RelatedDiary: Codable {
     }
 }
 
+// MARK: - Agent 对话响应（借鉴 Hermes 的 tool-calling loop）
+struct AgentChatResponse: Codable {
+    let response: String
+    let conversationId: Int?
+    let toolUsage: [ToolUsage]?
+    let iterations: Int?
+    let safe: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case response
+        case conversationId = "conversation_id"
+        case toolUsage = "tool_usage"
+        case iterations
+        case safe
+    }
+}
+
+struct ToolUsage: Codable {
+    let tool: String
+    let resultPreview: String?
+
+    enum CodingKeys: String, CodingKey {
+        case tool
+        case resultPreview = "result_preview"
+    }
+}
+
 struct FilterOptions: Codable {
     let emotions: [String]
     let topics: [String]

@@ -7,19 +7,22 @@ struct ChatMessage: Identifiable, Equatable {
     let content: String
     var memoryIds: [Int] = []
     var feedbackGiven: Bool? = nil
+    var toolUsage: [ToolUsage]? = nil
 
     init(
         id: UUID = UUID(),
         role: String,
         content: String,
         memoryIds: [Int] = [],
-        feedbackGiven: Bool? = nil
+        feedbackGiven: Bool? = nil,
+        toolUsage: [ToolUsage]? = nil
     ) {
         self.id = id
         self.role = role
         self.content = content
         self.memoryIds = memoryIds
         self.feedbackGiven = feedbackGiven
+        self.toolUsage = toolUsage
     }
 
     static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
@@ -278,18 +281,18 @@ struct SearchView: View {
 
         Task {
             do {
-                let response = try await APIService.shared.askQuestion(
-                    question: currentQuery,
+                let response = try await APIService.shared.agentChat(
+                    message: currentQuery,
                     conversationHistory: apiHistory.isEmpty ? nil : apiHistory
                 )
                 await MainActor.run {
                     // 添加用户消息
                     chatMessages.append(ChatMessage(role: "user", content: currentQuery))
-                    // 添加 AI 回答
+                    // 添加 AI 回答（含工具使用轨迹）
                     let aiMessage = ChatMessage(
                         role: "assistant",
-                        content: response.answer,
-                        memoryIds: response.memoryIds ?? []
+                        content: response.response,
+                        toolUsage: response.toolUsage
                     )
                     chatMessages.append(aiMessage)
                     isSearching = false
@@ -378,6 +381,24 @@ struct ChatBubbleView: View {
                     .background(message.role == "user" ? Color(hex: "C4935A") : Color.white)
                     .cornerRadius(18)
                     .shadow(color: Color.black.opacity(0.05), radius: 4, y: 2)
+
+                // AI 使用的工具（透明展示 Agent 能力）
+                if message.role == "assistant", let tools = message.toolUsage, !tools.isEmpty {
+                    let nameMap: [String: String] = [
+                        "search_diaries": "搜日记",
+                        "get_insights": "获取洞察",
+                        "get_memory": "查记忆",
+                        "save_memory": "存记忆"
+                    ]
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 10))
+                        Text("已调用：" + tools.map { nameMap[$0.tool] ?? $0.tool }.joined(separator: "、"))
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(Color(hex: "C4935A"))
+                    .padding(.horizontal, 4)
+                }
 
                 // AI 回答的反馈按钮
                 if message.role == "assistant" && !message.memoryIds.isEmpty {
