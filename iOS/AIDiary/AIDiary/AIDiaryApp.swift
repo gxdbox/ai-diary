@@ -5,6 +5,7 @@ import CoreLocation
 @main
 struct AIDiaryApp: App {
     @StateObject private var appState = AppState()
+    @StateObject private var authService = AuthService()
     @State private var showSplash = true
 
     var body: some Scene {
@@ -13,13 +14,26 @@ struct AIDiaryApp: App {
                 if showSplash {
                     SplashScreen(isActive: $showSplash)
                 } else {
-                    ContentView()
-                        .environmentObject(appState)
-                        .preferredColorScheme(.light)
-                        .task {
-                            await appState.setup()
-                        }
+                    if authService.isLoggedIn {
+                        ContentView()
+                            .environmentObject(appState)
+                            .environmentObject(authService)
+                            .preferredColorScheme(.light)
+                            .task {
+                                await appState.setup()
+                            }
+                            .onReceive(NotificationCenter.default.publisher(for: APIService.tokenExpiredNotification)) { _ in
+                                authService.logout()
+                            }
+                    } else {
+                        AuthView()
+                            .environmentObject(authService)
+                            .preferredColorScheme(.light)
+                    }
                 }
+            }
+            .task {
+                await authService.checkAuthStatus()
             }
         }
     }

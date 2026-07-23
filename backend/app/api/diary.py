@@ -10,7 +10,8 @@ import json
 import asyncio
 import importlib
 
-from app.db.database import get_db, Diary
+from app.db.database import get_db, Diary, User
+from app.core.security import get_current_user
 from app.models.diary import (
     DiaryCreate, DiaryResponse, DiaryListResponse,
     CleanTextRequest, CleanTextResponse, WeatherRequest,
@@ -26,7 +27,7 @@ from app.services.oss_service import OSSService
 router = APIRouter()
 
 
-def _async_learn_from_diary(diary_id: int, diary_data: dict):
+def _async_learn_from_diary(diary_id: int, diary_data: dict, user_id: int = None):
     """
     异步学习日记内容（后台任务）
 
@@ -44,7 +45,7 @@ def _async_learn_from_diary(diary_id: int, diary_data: dict):
         db = next(database_module.get_sync_db())
         DiaryAssistantService = diary_assistant_module.DiaryAssistantService
         assistant = DiaryAssistantService(db)
-        assistant.learn_from_diary(diary_id, diary_data)
+        assistant.learn_from_diary(diary_id, diary_data, user_id=user_id)
         db.close()
 
     except Exception as e:
@@ -52,7 +53,7 @@ def _async_learn_from_diary(diary_id: int, diary_data: dict):
         print(f"[Memory Learning Error] diary_id={diary_id}: {e}")
 
 
-def _async_extract_entities(diary_id: int, cleaned_text: str, created_at: datetime):
+def _async_extract_entities(diary_id: int, cleaned_text: str, created_at: datetime, user_id: int = None):
     """
     异步提取日记中的实体（后台任务）
 
@@ -72,14 +73,14 @@ def _async_extract_entities(diary_id: int, cleaned_text: str, created_at: dateti
 
         # 构建已知实体上下文用于别名归一化
         normalizer = EntityNormalizer(db)
-        context = normalizer.build_context()
+        context = normalizer.build_context(user_id=user_id)
 
         # 提取实体
         import asyncio
         entities = asyncio.run(extractor.extract_entities(cleaned_text, context))
 
         # 保存实体
-        asyncio.run(extractor.save_entities(entities, diary_id, created_at))
+        asyncio.run(extractor.save_entities(entities, diary_id, created_at, user_id=user_id))
 
         db.close()
 
@@ -89,7 +90,7 @@ def _async_extract_entities(diary_id: int, cleaned_text: str, created_at: dateti
 
 
 @router.post("/clean", response_model=CleanTextResponse)
-async def clean_text(request: CleanTextRequest):
+async def clean_text(request: CleanTextRequest, current_user: User = Depends(get_current_user)):
     """
     清洗语音转写文本
     使用AI进行智能清洗
@@ -111,7 +112,8 @@ async def clean_text(request: CleanTextRequest):
 async def create_diary(
     request: DiaryCreate,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     创建新日记
@@ -130,6 +132,7 @@ async def create_diary(
 
         # 创建日记记录
         diary = Diary(
+            user_id=current_user.id,
             raw_text=request.raw_text,
             title=analysis.get("title"),
             cleaned_text=cleaned_text,
@@ -156,6 +159,7 @@ async def create_diary(
             diary_id=diary.id,
             text=cleaned_text,
             metadata={
+                "user_id": current_user.id,
                 "emotion": diary.emotion,
                 "created_at": diary.created_at.isoformat()
             }
@@ -169,13 +173,13 @@ async def create_diary(
             "topics": analysis["topics"],
             "key_events": analysis["key_events"]
         }
-        background_tasks.add_task(_async_learn_from_diary, diary.id, diary_data)
+        background_tasks.add_task(_async_learn_from_diary, diary.id, diary_data, user_id=current_user.id)
 
         # [真正异步] 使用独立线程提取实体，完全不阻塞主流程
         import threading
         thread = threading.Thread(
             target=_async_extract_entities,
-            args=(diary.id, cleaned_text, diary.created_at),
+            args=(diary.id, cleaned_text, diary.created_at, current_user.id),
             daemon=True  # 守护线程，主程序退出时自动结束
         )
         thread.start()
@@ -195,7 +199,8 @@ async def list_diaries(
     topic: str = Query(None, description="按主题筛选"),
     start_date: str = Query(None, description="开始日期 (YYYY-MM-DD)"),
     end_date: str = Query(None, description="结束日期 (YYYY-MM-DD)"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取日记列表
@@ -205,7 +210,7 @@ async def list_diaries(
         from datetime import datetime
 
         # 构建查询
-        query = select(Diary)
+        query = select(Diary).where(Diary.user_id == current_user.id)
 
         if emotion:
             query = query.where(Diary.emotion == emotion)
@@ -231,7 +236,7 @@ async def list_diaries(
                 pass
 
         # 计算总数
-        count_query = select(func.count()).select_from(Diary)
+        count_query = select(func.count()).select_from(Diary).where(Diary.user_id == current_user.id)
         if emotion:
             count_query = count_query.where(Diary.emotion == emotion)
         if topic:
@@ -272,19 +277,19 @@ async def list_diaries(
 
 
 @router.get("/filters")
-async def get_filters(db: AsyncSession = Depends(get_db)):
+async def get_filters(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     获取可用的筛选选项
     返回所有情绪和主题列表
     """
     try:
         # 获取所有情绪
-        emotion_query = select(Diary.emotion).where(Diary.emotion.isnot(None)).distinct()
+        emotion_query = select(Diary.emotion).where(Diary.emotion.isnot(None), Diary.user_id == current_user.id).distinct()
         emotion_result = await db.execute(emotion_query)
         emotions = sorted([e for e in emotion_result.scalars().all() if e])
 
         # 获取所有主题（从 JSON 数组中提取）
-        topic_query = select(Diary.topics).where(Diary.topics.isnot(None))
+        topic_query = select(Diary.topics).where(Diary.topics.isnot(None), Diary.user_id == current_user.id)
         topic_result = await db.execute(topic_query)
         topics_set = set()
         for topics_json in topic_result.scalars().all():
@@ -307,14 +312,15 @@ async def get_filters(db: AsyncSession = Depends(get_db)):
 @router.get("/{diary_id}", response_model=DiaryResponse)
 async def get_diary(
     diary_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取单篇日记详情
     """
     try:
         result = await db.execute(
-            select(Diary).where(Diary.id == diary_id)
+            select(Diary).where(Diary.id == diary_id, Diary.user_id == current_user.id)
         )
         diary = result.scalar_one_or_none()
 
@@ -332,7 +338,8 @@ async def get_diary(
 @router.delete("/{diary_id}")
 async def delete_diary(
     diary_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     删除日记
@@ -342,7 +349,7 @@ async def delete_diary(
     audio_url = None
     try:
         result = await db.execute(
-            select(Diary).where(Diary.id == diary_id)
+            select(Diary).where(Diary.id == diary_id, Diary.user_id == current_user.id)
         )
         diary = result.scalar_one_or_none()
 
@@ -392,14 +399,15 @@ async def delete_diary(
 async def update_diary(
     diary_id: int,
     cleaned_text: str = Query(..., description="修改后的文本"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     更新日记内容
     """
     try:
         result = await db.execute(
-            select(Diary).where(Diary.id == diary_id)
+            select(Diary).where(Diary.id == diary_id, Diary.user_id == current_user.id)
         )
         diary = result.scalar_one_or_none()
 
@@ -432,6 +440,7 @@ async def update_diary(
             diary_id=diary.id,
             text=cleaned_text,
             metadata={
+                "user_id": current_user.id,
                 "emotion": diary.emotion,
                 "created_at": diary.created_at.isoformat()
             }
@@ -493,7 +502,8 @@ def _diary_to_response(diary: Diary) -> DiaryResponse:
 async def upload_image(
     file: UploadFile = File(...),
     diary_id: int = Form(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     上传单张图片到日记
@@ -516,7 +526,7 @@ async def upload_image(
         key = oss_service.upload_image(file_data, ext)
 
         # 查询日记
-        result = await db.execute(select(Diary).where(Diary.id == diary_id))
+        result = await db.execute(select(Diary).where(Diary.id == diary_id, Diary.user_id == current_user.id))
         diary = result.scalar_one_or_none()
         if not diary:
             raise HTTPException(status_code=404, detail="日记不存在")
@@ -559,13 +569,14 @@ async def upload_image(
 @router.delete("/images")
 async def delete_image(
     request: ImageDeleteRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     删除日记中的单张图片
     """
     try:
-        result = await db.execute(select(Diary).where(Diary.id == request.diary_id))
+        result = await db.execute(select(Diary).where(Diary.id == request.diary_id, Diary.user_id == current_user.id))
         diary = result.scalar_one_or_none()
         if not diary:
             raise HTTPException(status_code=404, detail="日记不存在")
@@ -603,13 +614,14 @@ async def delete_image(
 @router.post("/weather")
 async def update_weather(
     request: WeatherRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     更新日记天气信息（异步调用）
     """
     try:
-        result = await db.execute(select(Diary).where(Diary.id == request.diary_id))
+        result = await db.execute(select(Diary).where(Diary.id == request.diary_id, Diary.user_id == current_user.id))
         diary = result.scalar_one_or_none()
 
         if not diary:
@@ -636,7 +648,8 @@ async def update_weather(
 async def upload_diary_audio(
     diary_id: int,
     audio_file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     上传日记音频文件到OSS
@@ -648,7 +661,7 @@ async def upload_diary_audio(
     """
     try:
         # 查询日记
-        result = await db.execute(select(Diary).where(Diary.id == diary_id))
+        result = await db.execute(select(Diary).where(Diary.id == diary_id, Diary.user_id == current_user.id))
         diary = result.scalar_one_or_none()
 
         if not diary:
@@ -676,7 +689,8 @@ async def upload_diary_audio(
 @router.get("/{diary_id}/audio-url")
 async def get_diary_audio_url(
     diary_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取日记音频的签名URL
@@ -686,7 +700,7 @@ async def get_diary_audio_url(
     3. 返回签名URL
     """
     try:
-        result = await db.execute(select(Diary).where(Diary.id == diary_id))
+        result = await db.execute(select(Diary).where(Diary.id == diary_id, Diary.user_id == current_user.id))
         diary = result.scalar_one_or_none()
 
         if not diary:

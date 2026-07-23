@@ -88,10 +88,11 @@ REFLECT_PROMPT_TEMPLATE = """分析以下对话，提取用户展现的深层自
 class DiaryAgent:
     """日记 Agent - tool-calling loop"""
 
-    def __init__(self, db: Session, vs=None):
+    def __init__(self, db: Session, vs=None, user_id: Optional[int] = None):
         self.db = db
+        self.user_id = user_id
         self.vector_store = vs or vector_store
-        self.tool_registry = DiaryToolRegistry(db, self.vector_store)
+        self.tool_registry = DiaryToolRegistry(db, self.vector_store, user_id=user_id)
 
     async def chat(
         self,
@@ -211,7 +212,7 @@ class DiaryAgent:
 
         # 注入轻量用户上下文（偏好/主题提示，非全量记忆）
         try:
-            factual = self.tool_registry.memory_service.get_factual_memory()
+            factual = self.tool_registry.memory_service.get_factual_memory(user_id=self.user_id)
             context_hints = []
             if factual.common_topics:
                 context_hints.append(

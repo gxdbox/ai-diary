@@ -27,55 +27,92 @@ class EntityNormalizer:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_known_entities(self) -> Dict[str, dict]:
+    def get_known_entities(self, user_id: int = None) -> Dict[str, dict]:
         """
         从数据库加载所有已知实体及其别名
+
+        Args:
+            user_id: 用户 ID，用于数据隔离
 
         Returns:
             {别名: {"character_id": id, "canonical_name": name}}
         """
         mapping = {}
 
-        # 加载 canonical names
-        result = self.db.execute(
-            text("SELECT id, name FROM characters")
-        )
+        # 加载 canonical names（按 user_id 过滤）
+        if user_id is not None:
+            result = self.db.execute(
+                text("SELECT id, name FROM characters WHERE user_id = :uid"),
+                {"uid": user_id}
+            )
+        else:
+            result = self.db.execute(
+                text("SELECT id, name FROM characters")
+            )
         for row in result.fetchall():
             char_id, name = row
             mapping[name] = {"character_id": char_id, "canonical_name": name}
 
-        # 加载别名映射
-        result = self.db.execute(
-            text("""
-                SELECT ca.alias, ca.character_id, c.name
-                FROM character_aliases ca
-                JOIN characters c ON c.id = ca.character_id
-            """)
-        )
+        # 加载别名映射（按 user_id 过滤）
+        if user_id is not None:
+            result = self.db.execute(
+                text("""
+                    SELECT ca.alias, ca.character_id, c.name
+                    FROM character_aliases ca
+                    JOIN characters c ON c.id = ca.character_id
+                    WHERE c.user_id = :uid
+                """),
+                {"uid": user_id}
+            )
+        else:
+            result = self.db.execute(
+                text("""
+                    SELECT ca.alias, ca.character_id, c.name
+                    FROM character_aliases ca
+                    JOIN characters c ON c.id = ca.character_id
+                """)
+            )
         for row in result.fetchall():
             alias, char_id, canonical = row
             mapping[alias] = {"character_id": char_id, "canonical_name": canonical}
 
         return mapping
 
-    def build_context(self) -> str:
+    def build_context(self, user_id: int = None) -> str:
         """
         构建已知实体上下文，供 LLM prompt 使用
+
+        Args:
+            user_id: 用户 ID，用于数据隔离
 
         Returns:
             "已知人物：顾余杭（别名：航航、儿子、语杭）\n..."
         """
-        # 获取所有人物及其别名
-        result = self.db.execute(
-            text("""
-                SELECT c.id, c.name,
-                       GROUP_CONCAT(ca.alias, '、') as alias_list
-                FROM characters c
-                LEFT JOIN character_aliases ca ON ca.character_id = c.id
-                GROUP BY c.id
-                ORDER BY c.appearance_count DESC
-            """)
-        )
+        # 获取所有人物及其别名（按 user_id 过滤）
+        if user_id is not None:
+            result = self.db.execute(
+                text("""
+                    SELECT c.id, c.name,
+                           GROUP_CONCAT(ca.alias, '、') as alias_list
+                    FROM characters c
+                    LEFT JOIN character_aliases ca ON ca.character_id = c.id
+                    WHERE c.user_id = :uid
+                    GROUP BY c.id
+                    ORDER BY c.appearance_count DESC
+                """),
+                {"uid": user_id}
+            )
+        else:
+            result = self.db.execute(
+                text("""
+                    SELECT c.id, c.name,
+                           GROUP_CONCAT(ca.alias, '、') as alias_list
+                    FROM characters c
+                    LEFT JOIN character_aliases ca ON ca.character_id = c.id
+                    GROUP BY c.id
+                    ORDER BY c.appearance_count DESC
+                """)
+            )
         lines = []
         for row in result.fetchall():
             char_id, name, alias_str = row

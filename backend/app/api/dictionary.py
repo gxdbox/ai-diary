@@ -8,7 +8,8 @@ from typing import List
 from pydantic import BaseModel
 import re
 
-from app.db.database import get_db, DictionaryEntry, async_session_maker
+from app.db.database import get_db, DictionaryEntry, async_session_maker, User
+from app.core.security import get_current_user
 
 router = APIRouter()
 
@@ -127,10 +128,10 @@ class DictionaryListResponse(BaseModel):
 
 
 @router.get("/list", response_model=DictionaryListResponse)
-async def list_dictionary(db: AsyncSession = Depends(get_db)):
+async def list_dictionary(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """获取所有词典条目"""
     try:
-        result = await db.execute(select(DictionaryEntry).order_by(DictionaryEntry.created_at.desc()))
+        result = await db.execute(select(DictionaryEntry).where(DictionaryEntry.user_id == current_user.id).order_by(DictionaryEntry.created_at.desc()))
         entries = result.scalars().all()
 
         return DictionaryListResponse(
@@ -150,13 +151,14 @@ async def list_dictionary(db: AsyncSession = Depends(get_db)):
 @router.post("/add", response_model=DictionaryEntryResponse)
 async def add_dictionary_entry(
     entry: DictionaryEntryCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """添加词典条目（只需输入正确词，系统自动生成拼音）"""
     try:
         # 检查是否已存在
         result = await db.execute(
-            select(DictionaryEntry).where(DictionaryEntry.word == entry.word)
+            select(DictionaryEntry).where(DictionaryEntry.word == entry.word, DictionaryEntry.user_id == current_user.id)
         )
         existing = result.scalar_one_or_none()
 
@@ -169,7 +171,7 @@ async def add_dictionary_entry(
 
         # 检查数量上限（免费用户 50 词，后期会员可放开）
         count_result = await db.execute(
-            select(func.count()).select_from(DictionaryEntry)
+            select(func.count()).select_from(DictionaryEntry).where(DictionaryEntry.user_id == current_user.id)
         )
         current_count = count_result.scalar()
         if current_count >= MAX_DICTIONARY_WORDS:
@@ -183,6 +185,7 @@ async def add_dictionary_entry(
 
         # 创建新条目
         new_entry = DictionaryEntry(
+            user_id=current_user.id,
             word=entry.word,
             pinyin=pinyin_str
         )
@@ -207,12 +210,13 @@ async def add_dictionary_entry(
 async def update_dictionary_entry(
     entry_id: int,
     entry: DictionaryEntryCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """更新词典条目"""
     try:
         result = await db.execute(
-            select(DictionaryEntry).where(DictionaryEntry.id == entry_id)
+            select(DictionaryEntry).where(DictionaryEntry.id == entry_id, DictionaryEntry.user_id == current_user.id)
         )
         dictionary_entry = result.scalar_one_or_none()
 
@@ -223,7 +227,8 @@ async def update_dictionary_entry(
         result = await db.execute(
             select(DictionaryEntry).where(
                 DictionaryEntry.word == entry.word,
-                DictionaryEntry.id != entry_id
+                DictionaryEntry.id != entry_id,
+                DictionaryEntry.user_id == current_user.id
             )
         )
         existing = result.scalar_one_or_none()
@@ -257,12 +262,13 @@ async def update_dictionary_entry(
 @router.delete("/{entry_id}")
 async def delete_dictionary_entry(
     entry_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """删除词典条目"""
     try:
         result = await db.execute(
-            select(DictionaryEntry).where(DictionaryEntry.id == entry_id)
+            select(DictionaryEntry).where(DictionaryEntry.id == entry_id, DictionaryEntry.user_id == current_user.id)
         )
         entry = result.scalar_one_or_none()
 

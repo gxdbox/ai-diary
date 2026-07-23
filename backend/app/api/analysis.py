@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 import json
 
-from app.db.database import get_db, Diary
+from app.db.database import get_db, Diary, User
+from app.core.security import get_current_user
 from app.models.diary import AnalyzeRequest, AnalyzeResponse, EmotionResult
 from app.models.insight import DeepInsightResponse
 from app.services.ai_service import ai_service
@@ -19,7 +20,7 @@ router = APIRouter()
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-async def analyze_text(request: AnalyzeRequest):
+async def analyze_text(request: AnalyzeRequest, current_user: User = Depends(get_current_user)):
     """
     分析文本
     返回情绪、主题、关键事件
@@ -44,7 +45,8 @@ async def analyze_text(request: AnalyzeRequest):
 @router.get("/emotion/trend")
 async def get_emotion_trend(
     days: int = Query(30, ge=1, le=90, description="统计天数"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取情绪趋势
@@ -55,7 +57,7 @@ async def get_emotion_trend(
 
         result = await db.execute(
             select(Diary)
-            .where(Diary.created_at >= start_date)
+            .where(Diary.created_at >= start_date, Diary.user_id == current_user.id)
             .order_by(Diary.created_at)
         )
         diaries = result.scalars().all()
@@ -104,7 +106,8 @@ async def get_emotion_trend(
 @router.get("/topics/distribution")
 async def get_topic_distribution(
     days: int = Query(30, ge=1, le=90, description="统计天数"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取主题分布
@@ -114,7 +117,7 @@ async def get_topic_distribution(
 
         result = await db.execute(
             select(Diary)
-            .where(Diary.created_at >= start_date)
+            .where(Diary.created_at >= start_date, Diary.user_id == current_user.id)
         )
         diaries = result.scalars().all()
 
@@ -136,7 +139,8 @@ async def get_topic_distribution(
 @router.get("/emotion/distribution")
 async def get_emotion_distribution(
     days: int = Query(30, ge=1, le=90, description="统计天数"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取情绪分布
@@ -146,7 +150,7 @@ async def get_emotion_distribution(
 
         result = await db.execute(
             select(Diary)
-            .where(Diary.created_at >= start_date)
+            .where(Diary.created_at >= start_date, Diary.user_id == current_user.id)
         )
         diaries = result.scalars().all()
 
@@ -178,25 +182,26 @@ async def get_emotion_distribution(
 
 @router.get("/stats")
 async def get_stats(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取总体统计
     """
     try:
         # 总日记数
-        total_result = await db.execute(select(func.count()).select_from(Diary))
+        total_result = await db.execute(select(func.count()).select_from(Diary).where(Diary.user_id == current_user.id))
         total_count = total_result.scalar()
 
         # 总字数
-        words_result = await db.execute(select(func.sum(Diary.word_count)))
+        words_result = await db.execute(select(func.sum(Diary.word_count)).where(Diary.user_id == current_user.id))
         total_words = words_result.scalar() or 0
 
         # 连续记录天数
-        streak = await _calculate_streak(db)
+        streak = await _calculate_streak(db, current_user.id)
 
         # 平均情绪能量（兼容旧数据）
-        result = await db.execute(select(Diary))
+        result = await db.execute(select(Diary).where(Diary.user_id == current_user.id))
         diaries = result.scalars().all()
 
         energies = []
@@ -226,7 +231,8 @@ async def get_stats(
 @router.get("/insights")
 async def get_insights(
     days: int = Query(30, ge=1, le=90),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取AI洞察
@@ -236,7 +242,7 @@ async def get_insights(
 
         result = await db.execute(
             select(Diary)
-            .where(Diary.created_at >= start_date)
+            .where(Diary.created_at >= start_date, Diary.user_id == current_user.id)
             .order_by(desc(Diary.created_at))
             .limit(50)
         )
@@ -286,7 +292,8 @@ async def get_insights(
 @router.get("/deep-insights", response_model=DeepInsightResponse)
 async def get_deep_insights(
     days: int = Query(90, ge=7, le=365, description="分析周期天数"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取深度洞察
@@ -304,7 +311,7 @@ async def get_deep_insights(
 
         result = await db.execute(
             select(Diary)
-            .where(Diary.created_at >= start_date)
+            .where(Diary.created_at >= start_date, Diary.user_id == current_user.id)
             .order_by(desc(Diary.created_at))
             .limit(200)
         )
@@ -354,11 +361,12 @@ def _convert_old_score(diary: Diary) -> Optional[float]:
         return 0  # mixed 或未知
 
 
-async def _calculate_streak(db: AsyncSession) -> int:
+async def _calculate_streak(db: AsyncSession, user_id: int) -> int:
     """计算连续记录天数"""
     # 获取所有日记日期
     result = await db.execute(
         select(Diary.created_at)
+        .where(Diary.user_id == user_id)
         .order_by(desc(Diary.created_at))
     )
     all_dates = [row[0].date() for row in result.fetchall()]

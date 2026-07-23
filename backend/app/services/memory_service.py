@@ -39,19 +39,25 @@ class MemoryService:
                     access_count INTEGER DEFAULT 0,
                     last_accessed TEXT,
                     metadata TEXT DEFAULT '{}',
+                    user_id INTEGER,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            # 安全迁移：为旧表添加 user_id 列
+            try:
+                self.db.execute(text("ALTER TABLE memories ADD COLUMN user_id INTEGER"))
+            except Exception:
+                pass  # 列已存在
             self.db.commit()
         except Exception as e:
             print(f"Memory table init error: {e}")
 
     # ==================== 事实记忆 ====================
 
-    def get_factual_memory(self) -> FactualMemory:
+    def get_factual_memory(self, user_id: Optional[int] = None) -> FactualMemory:
         """获取用户事实记忆（偏好、习惯等）"""
-        memories = self._get_memories_by_type(MemoryType.FACTUAL)
+        memories = self._get_memories_by_type(MemoryType.FACTUAL, user_id=user_id)
 
         if not memories:
             return FactualMemory()
@@ -90,9 +96,9 @@ class MemoryService:
             last_updated=datetime.now()
         )
 
-    def update_factual_memory(self, key: str, value: Any, source_diary_id: Optional[int] = None):
+    def update_factual_memory(self, key: str, value: Any, source_diary_id: Optional[int] = None, user_id: Optional[int] = None):
         """更新事实记忆"""
-        existing = self._find_factual_memory_by_key(key)
+        existing = self._find_factual_memory_by_key(key, user_id=user_id)
 
         if existing:
             # 更新现有记忆
@@ -106,31 +112,34 @@ class MemoryService:
         else:
             # 创建新记忆
             self.db.execute(text("""
-                INSERT INTO memories (memory_type, content, keywords, source_diary_id, metadata, importance_score)
-                VALUES ('factual', :content, '[]', :source_id, :metadata, 0.7)
+                INSERT INTO memories (memory_type, content, keywords, source_diary_id, metadata, importance_score, user_id)
+                VALUES ('factual', :content, '[]', :source_id, :metadata, 0.7, :user_id)
             """), {
                 "content": f"{key}: {str(value)}",
                 "source_id": source_diary_id,
-                "metadata": json.dumps({key: value})
+                "metadata": json.dumps({key: value}),
+                "user_id": user_id
             })
 
         self.db.commit()
 
-    def _find_factual_memory_by_key(self, key: str) -> Optional[Dict]:
+    def _find_factual_memory_by_key(self, key: str, user_id: Optional[int] = None) -> Optional[Dict]:
         """查找包含特定key的事实记忆"""
-        result = self.db.execute(text("""
-            SELECT * FROM memories
-            WHERE memory_type = 'factual' AND content LIKE :key_pattern
-            LIMIT 1
-        """), {"key_pattern": f"{key}:%"})
+        query = "SELECT * FROM memories WHERE memory_type = 'factual' AND content LIKE :key_pattern"
+        params = {"key_pattern": f"{key}:%"}
+        if user_id is not None:
+            query += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        query += " LIMIT 1"
+        result = self.db.execute(text(query), params)
         row = result.fetchone()
         return dict(row) if row else None
 
     # ==================== 情节记忆 ====================
 
-    def get_episodic_memories(self, limit: int = 50) -> List[EpisodicMemory]:
+    def get_episodic_memories(self, limit: int = 50, user_id: Optional[int] = None) -> List[EpisodicMemory]:
         """获取情节记忆（历史日记摘要）"""
-        memories = self._get_memories_by_type(MemoryType.EPISODIC, limit)
+        memories = self._get_memories_by_type(MemoryType.EPISODIC, limit, user_id=user_id)
 
         episodic_list = []
         for m in memories:
@@ -151,7 +160,7 @@ class MemoryService:
 
     def create_episodic_memory(self, diary_id: int, summary: str,
                                key_events: List[str], emotion: str,
-                               topics: List[str]):
+                               topics: List[str], user_id: Optional[int] = None):
         """从日记创建情节记忆"""
         # 生成检索关键词
         retrieval_keys = topics + key_events[:3]
@@ -163,37 +172,40 @@ class MemoryService:
         }
 
         self.db.execute(text("""
-            INSERT INTO memories (memory_type, content, keywords, source_diary_id, metadata, importance_score)
-            VALUES ('episodic', :summary, :topics, :diary_id, :metadata, 0.6)
+            INSERT INTO memories (memory_type, content, keywords, source_diary_id, metadata, importance_score, user_id)
+            VALUES ('episodic', :summary, :topics, :diary_id, :metadata, 0.6, :user_id)
         """), {
             "summary": summary,
             "topics": json.dumps(topics),
             "diary_id": diary_id,
-            "metadata": json.dumps(metadata)
+            "metadata": json.dumps(metadata),
+            "user_id": user_id
         })
         self.db.commit()
 
-    def find_similar_episodic(self, keywords: List[str], limit: int = 5) -> List[EpisodicMemory]:
+    def find_similar_episodic(self, keywords: List[str], limit: int = 5, user_id: Optional[int] = None) -> List[EpisodicMemory]:
         """查找相似的情节记忆"""
+        user_filter = " AND user_id = :user_id" if user_id is not None else ""
+        user_params = {"user_id": user_id} if user_id is not None else {}
         if not keywords:
             # 如果关键词为空，返回最新的几条记忆
-            result = self.db.execute(text("""
+            result = self.db.execute(text(f"""
                 SELECT * FROM memories
-                WHERE memory_type = 'episodic'
+                WHERE memory_type = 'episodic'{user_filter}
                 ORDER BY created_at DESC
                 LIMIT :limit
-            """), {"limit": limit})
+            """), {"limit": limit, **user_params})
         else:
             # 使用关键词匹配（同时搜索 keywords 和 content）
             keyword_pattern = "%" + keywords[0] + "%"
 
-            result = self.db.execute(text("""
+            result = self.db.execute(text(f"""
                 SELECT * FROM memories
-                WHERE memory_type = 'episodic'
+                WHERE memory_type = 'episodic'{user_filter}
                 AND (keywords LIKE :pattern OR content LIKE :pattern)
                 ORDER BY importance_score DESC, created_at DESC
                 LIMIT :limit
-            """), {"pattern": keyword_pattern, "limit": limit})
+            """), {"pattern": keyword_pattern, "limit": limit, **user_params})
 
         rows = result.fetchall()
         episodic_list = []
@@ -215,24 +227,25 @@ class MemoryService:
 
     # ==================== 通用方法 ====================
 
-    def _get_memories_by_type(self, memory_type: MemoryType, limit: int = 100) -> List[Dict]:
+    def _get_memories_by_type(self, memory_type: MemoryType, limit: int = 100, user_id: Optional[int] = None) -> List[Dict]:
         """获取指定类型的所有记忆"""
-        result = self.db.execute(text("""
-            SELECT * FROM memories
-            WHERE memory_type = :type
-            ORDER BY importance_score DESC, last_accessed DESC
-            LIMIT :limit
-        """), {"type": memory_type.value, "limit": limit})
+        query = "SELECT * FROM memories WHERE memory_type = :type"
+        params = {"type": memory_type.value, "limit": limit}
+        if user_id is not None:
+            query += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        query += " ORDER BY importance_score DESC, last_accessed DESC LIMIT :limit"
+        result = self.db.execute(text(query), params)
 
         rows = result.fetchall()
         # SQLAlchemy 2.0: 使用 _mapping 或 list(row.keys()) 来获取字典
         return [dict(zip(row._fields, row)) if hasattr(row, '_fields') else dict(row._mapping) for row in rows]
 
-    def get_all_memories(self) -> Dict[MemoryType, List[MemoryItem]]:
+    def get_all_memories(self, user_id: Optional[int] = None) -> Dict[MemoryType, List[MemoryItem]]:
         """获取所有记忆，按类型分组"""
         result = {}
         for mt in [MemoryType.FACTUAL, MemoryType.EPISODIC]:
-            memories = self._get_memories_by_type(mt)
+            memories = self._get_memories_by_type(mt, user_id=user_id)
             result[mt] = [
                 MemoryItem(
                     id=m["id"],
@@ -251,18 +264,23 @@ class MemoryService:
             ]
         return result
 
-    def update_importance(self, memory_id: int, delta: float = 0.1):
+    def update_importance(self, memory_id: int, delta: float = 0.1, user_id: Optional[int] = None):
         """更新记忆重要性"""
-        self.db.execute(text("""
+        query = """
             UPDATE memories
             SET importance_score = MIN(1.0, MAX(0.0, importance_score + :delta)),
                 last_accessed = CURRENT_TIMESTAMP,
                 access_count = access_count + 1
             WHERE id = :id
-        """), {"delta": delta, "id": memory_id})
+        """
+        params = {"delta": delta, "id": memory_id}
+        if user_id is not None:
+            query += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        self.db.execute(text(query), params)
         self.db.commit()
 
-    def extract_from_diary(self, diary_data: Dict):
+    def extract_from_diary(self, diary_data: Dict, user_id: Optional[int] = None):
         """从日记数据提取并存储记忆"""
         diary_id = diary_data.get("id")
         cleaned_text = diary_data.get("cleaned_text", "")
@@ -278,7 +296,8 @@ class MemoryService:
                 summary=summary,
                 key_events=key_events,
                 emotion=emotion,
-                topics=topics
+                topics=topics,
+                user_id=user_id
             )
 
         # 2. 更新事实记忆（提取主题偏好）
@@ -287,15 +306,17 @@ class MemoryService:
                 self.update_factual_memory(
                     key="topic_preference",
                     value={topic: 1},
-                    source_diary_id=diary_id
+                    source_diary_id=diary_id,
+                    user_id=user_id
                 )
 
         # 3. 更新情绪模式
         if emotion:
-            existing_patterns = self.get_factual_memory().emotional_patterns
+            existing_patterns = self.get_factual_memory(user_id=user_id).emotional_patterns
             existing_patterns[emotion] = existing_patterns.get(emotion, 0) + 1
             self.update_factual_memory(
                 key="emotion_pattern",
                 value=existing_patterns,
-                source_diary_id=diary_id
+                source_diary_id=diary_id,
+                user_id=user_id
             )

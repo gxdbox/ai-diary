@@ -24,26 +24,26 @@ class DiaryAssistantService:
         self.memory_service = MemoryService(db)
         self.retrieval_service = ProactiveRetrievalService(db)
 
-    def learn_from_diary(self, diary_id: int, diary_data: Dict):
+    def learn_from_diary(self, diary_id: int, diary_data: Dict, user_id: int = None):
         """
         从新日记学习并更新记忆
 
         每次写完日记，系统自动提取并存储记忆
         """
         # 1. 提取并存储记忆
-        self.memory_service.extract_from_diary(diary_data)
+        self.memory_service.extract_from_diary(diary_data, user_id=user_id)
 
         # 2. 如果有情绪，更新情绪模式
         if diary_data.get("emotion"):
-            self._update_emotion_pattern(diary_data["emotion"])
+            self._update_emotion_pattern(diary_data["emotion"], user_id=user_id)
 
-    def get_user_context(self) -> Dict:
+    def get_user_context(self, user_id: int = None) -> Dict:
         """
         获取用户完整上下文
 
         返回用户的偏好、常用主题、情绪分布
         """
-        factual = self.memory_service.get_factual_memory()
+        factual = self.memory_service.get_factual_memory(user_id=user_id)
 
         return {
             "preferences": factual.user_preferences,
@@ -53,7 +53,7 @@ class DiaryAssistantService:
             "last_updated": factual.last_updated
         }
 
-    def record_feedback(self, diary_id: int, memory_id: int, was_helpful: bool):
+    def record_feedback(self, diary_id: int, memory_id: int, was_helpful: bool, user_id: int = None):
         """
         记录用户反馈并学习
 
@@ -62,15 +62,16 @@ class DiaryAssistantService:
         self.retrieval_service.learn_from_feedback(memory_id, was_helpful)
 
         if was_helpful:
-            self.memory_service.update_importance(memory_id, delta=0.15)
+            self.memory_service.update_importance(memory_id, delta=0.15, user_id=user_id)
 
-    def _update_emotion_pattern(self, emotion: str):
+    def _update_emotion_pattern(self, emotion: str, user_id: int = None):
         """更新情绪模式统计"""
-        factual = self.memory_service.get_factual_memory()
+        factual = self.memory_service.get_factual_memory(user_id=user_id)
         patterns = factual.emotional_patterns
         patterns[emotion] = patterns.get(emotion, 0) + 1
 
         self.memory_service.update_factual_memory(
             key="emotion_pattern",
-            value=patterns
+            value=patterns,
+            user_id=user_id
         )

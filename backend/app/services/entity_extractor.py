@@ -131,21 +131,24 @@ class EntityExtractor:
                 "events": []
             }
 
-    async def save_entities(self, entities: Dict, diary_id: int, created_at: datetime) -> None:
+    async def save_entities(self, entities: Dict, diary_id: int, created_at: datetime, user_id: int = None) -> None:
         """
         保存提取的实体到数据库，自动进行别名归一化
+
+        Args:
+            user_id: 用户 ID，用于数据隔离
         """
         try:
-            known_entities = self.normalizer.get_known_entities()
+            known_entities = self.normalizer.get_known_entities(user_id=user_id)
 
             character_ids = {}
             for char_name in entities.get("characters", []):
-                char_id = await self._save_character(char_name, created_at, known_entities)
+                char_id = await self._save_character(char_name, created_at, known_entities, user_id=user_id)
                 if char_id:
                     character_ids[char_name] = char_id
 
             for loc_name in entities.get("locations", []):
-                await self._save_location(loc_name, created_at)
+                await self._save_location(loc_name, created_at, user_id=user_id)
 
             for rel in entities.get("relationships", []):
                 person_a = rel.get("person_a")
@@ -157,7 +160,8 @@ class EntityExtractor:
                         character_ids[person_a],
                         character_ids[person_b],
                         rel_type,
-                        created_at
+                        created_at,
+                        user_id=user_id
                     )
 
             logger.info(f"实体保存成功: {len(character_ids)} 个人物, "
@@ -168,7 +172,7 @@ class EntityExtractor:
             logger.error(f"保存实体失败: {e}")
 
     async def _save_character(self, name: str, appearance_time: datetime,
-                               known_entities: Dict[str, dict]) -> Optional[int]:
+                               known_entities: Dict[str, dict], user_id: int = None) -> Optional[int]:
         """保存或更新人物实体（含别名归一化）"""
         try:
             matched = self.normalizer.normalize(name, known_entities)
@@ -198,8 +202,8 @@ class EntityExtractor:
                 return char_id
             else:
                 result = self.db.execute(
-                    text("SELECT id, appearance_count FROM characters WHERE name = :name"),
-                    {"name": name}
+                    text("SELECT id, appearance_count FROM characters WHERE name = :name AND user_id = :uid"),
+                    {"name": name, "uid": user_id}
                 )
                 row = result.fetchone()
 
@@ -229,14 +233,15 @@ class EntityExtractor:
                     result = self.db.execute(
                         text("""
                             INSERT INTO characters (name, first_appearance, last_appearance,
-                                                  appearance_count, avatar_color, created_at, updated_at)
-                            VALUES (:name, :first, :last, 1, :color, :created, :updated)
+                                                  appearance_count, avatar_color, user_id, created_at, updated_at)
+                            VALUES (:name, :first, :last, 1, :color, :uid, :created, :updated)
                         """),
                         {
                             "name": name,
                             "first": appearance_time.isoformat(),
                             "last": appearance_time.isoformat(),
                             "color": avatar_color,
+                            "uid": user_id,
                             "created": datetime.utcnow().isoformat(),
                             "updated": datetime.utcnow().isoformat()
                         }
@@ -249,12 +254,12 @@ class EntityExtractor:
             self.db.rollback()
             return None
 
-    async def _save_location(self, name: str, visit_time: datetime) -> None:
+    async def _save_location(self, name: str, visit_time: datetime, user_id: int = None) -> None:
         """保存或更新地点实体"""
         try:
             result = self.db.execute(
-                text("SELECT id, visit_count FROM locations WHERE name = :name"),
-                {"name": name}
+                text("SELECT id, visit_count FROM locations WHERE name = :name AND user_id = :uid"),
+                {"name": name, "uid": user_id}
             )
             row = result.fetchone()
 
@@ -280,12 +285,13 @@ class EntityExtractor:
             else:
                 self.db.execute(
                     text("""
-                        INSERT INTO locations (name, visit_count, last_visit, created_at, updated_at)
-                        VALUES (:name, 1, :last, :created, :updated)
+                        INSERT INTO locations (name, visit_count, last_visit, user_id, created_at, updated_at)
+                        VALUES (:name, 1, :last, :uid, :created, :updated)
                     """),
                     {
                         "name": name,
                         "last": visit_time.isoformat(),
+                        "uid": user_id,
                         "created": datetime.utcnow().isoformat(),
                         "updated": datetime.utcnow().isoformat()
                     }
@@ -297,7 +303,7 @@ class EntityExtractor:
             self.db.rollback()
 
     async def _save_relationship(self, char_a_id: int, char_b_id: int,
-                                  rel_type: str, interaction_time: datetime) -> None:
+                                  rel_type: str, interaction_time: datetime, user_id: int = None) -> None:
         """保存或更新人物关系"""
         try:
             if char_a_id > char_b_id:
@@ -306,9 +312,9 @@ class EntityExtractor:
             result = self.db.execute(
                 text("""
                     SELECT id, strength FROM relationships
-                    WHERE character_a_id = :a_id AND character_b_id = :b_id
+                    WHERE character_a_id = :a_id AND character_b_id = :b_id AND user_id = :uid
                 """),
-                {"a_id": char_a_id, "b_id": char_b_id}
+                {"a_id": char_a_id, "b_id": char_b_id, "uid": user_id}
             )
             row = result.fetchone()
 
@@ -340,14 +346,15 @@ class EntityExtractor:
                     text("""
                         INSERT INTO relationships (character_a_id, character_b_id,
                                                  relationship_type, strength,
-                                                 last_interaction, created_at, updated_at)
-                        VALUES (:a_id, :b_id, :rel_type, 0.5, :last, :created, :updated)
+                                                 last_interaction, user_id, created_at, updated_at)
+                        VALUES (:a_id, :b_id, :rel_type, 0.5, :last, :uid, :created, :updated)
                     """),
                     {
                         "a_id": char_a_id,
                         "b_id": char_b_id,
                         "rel_type": rel_type,
                         "last": interaction_time.isoformat(),
+                        "uid": user_id,
                         "created": datetime.utcnow().isoformat(),
                         "updated": datetime.utcnow().isoformat()
                     }

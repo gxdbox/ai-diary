@@ -10,6 +10,7 @@
 6. 安全检查（敏感输入被拦截）
 """
 import json
+import uuid
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
@@ -19,6 +20,18 @@ from app.services.ai.client import llm
 from app.services.ai.agent import DiaryAgent, AGENT_SYSTEM
 from app.services.ai.tools import DiaryToolRegistry
 from app.services.memory_service import MemoryService
+
+
+async def _register_and_login(client, email: str = None, password: str = "test123456"):
+    """注册并登录，返回 auth headers"""
+    email = email or f"test_{uuid.uuid4().hex[:8]}@test.com"
+    resp = await client.post("/api/auth/register", json={
+        "email": email,
+        "password": password,
+        "nickname": "TestUser"
+    })
+    token = resp.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 # ==================== Fixtures ====================
@@ -310,7 +323,8 @@ async def test_reflect_skips_when_no_insight(
 @pytest.mark.asyncio
 async def test_capabilities_endpoint(client):
     """/api/agent/capabilities 应返回 4 个工具能力"""
-    response = await client.get("/api/agent/capabilities")
+    headers = await _register_and_login(client)
+    response = await client.get("/api/agent/capabilities", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["agent_enabled"] is True
@@ -323,8 +337,9 @@ async def test_capabilities_endpoint(client):
 @pytest.mark.asyncio
 async def test_chat_empty_message_rejected(client):
     """空消息应返回 400"""
+    headers = await _register_and_login(client)
     response = await client.post(
-        "/api/agent/chat", json={"message": "  "}
+        "/api/agent/chat", json={"message": "  "}, headers=headers
     )
     assert response.status_code == 400
 

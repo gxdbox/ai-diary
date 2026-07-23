@@ -13,7 +13,8 @@ from sqlalchemy import select
 from typing import Dict, List, Optional
 import json
 
-from app.db.database import get_sync_db, Diary
+from app.db.database import get_sync_db, Diary, User
+from app.core.security import get_current_user_sync
 from app.models.memory import (
     RetrievalRequest, ProactiveRetrievalResponse
 )
@@ -37,7 +38,8 @@ class AskRequest(BaseModel):
 async def ask_question(
     question: str = Query(..., description="用户问题"),
     request: Optional[AskRequest] = None,
-    db: Session = Depends(get_sync_db)
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """
     AI 智能问答（升级版 - 整合上下文管理）
@@ -58,7 +60,7 @@ async def ask_question(
         conversation_history = request.conversation_history if request else None
         context = context_service.build_context(
             user_input=question,
-            user_id=1,
+            user_id=current_user.id,
             conversation_history=conversation_history or [],
             budget=ContextBudget()
         )
@@ -111,7 +113,8 @@ async def ask_question(
 @router.post("/retrieve", response_model=ProactiveRetrievalResponse)
 async def proactive_retrieve(
     request: RetrievalRequest,
-    db: Session = Depends(get_sync_db)
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """
     主动检索记忆
@@ -128,7 +131,10 @@ async def proactive_retrieve(
 
 
 @router.get("/context")
-async def get_user_context(db: Session = Depends(get_sync_db)):
+async def get_user_context(
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
+):
     """
     获取用户上下文
 
@@ -136,7 +142,7 @@ async def get_user_context(db: Session = Depends(get_sync_db)):
     """
     try:
         assistant = DiaryAssistantService(db)
-        context = assistant.get_user_context()
+        context = assistant.get_user_context(user_id=current_user.id)
         return context
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取上下文失败: {str(e)}")
@@ -146,7 +152,8 @@ async def get_user_context(db: Session = Depends(get_sync_db)):
 async def learn_from_diary(
     diary_id: int,
     diary_data: Dict,
-    db: Session = Depends(get_sync_db)
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """
     从日记学习
@@ -156,7 +163,7 @@ async def learn_from_diary(
     try:
         diary_data["id"] = diary_id
         assistant = DiaryAssistantService(db)
-        assistant.learn_from_diary(diary_id, diary_data)
+        assistant.learn_from_diary(diary_id, diary_data, user_id=current_user.id)
         return {"success": True, "message": "学习完成"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"学习失败: {str(e)}")
@@ -166,7 +173,8 @@ async def learn_from_diary(
 async def record_session_feedback(
     memory_ids: List[int] = Body(..., embed=True),
     was_helpful: bool = Body(..., embed=True),
-    db: Session = Depends(get_sync_db)
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """
     记录反馈并学习（简化版）
@@ -196,7 +204,8 @@ async def record_feedback(
     diary_id: int,
     memory_id: int,
     was_helpful: bool,
-    db: Session = Depends(get_sync_db)
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """
     记录反馈并学习
@@ -216,9 +225,12 @@ async def record_feedback(
 
 
 @router.get("/memories")
-async def get_all_memories(db: Session = Depends(get_sync_db)):
+async def get_all_memories(
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
+):
     """
-    获取所有记忆
+    获取当前用户的所有记忆
 
     查看两种类型的记忆内容
     """
@@ -227,7 +239,7 @@ async def get_all_memories(db: Session = Depends(get_sync_db)):
         from app.models.memory import MemoryType
 
         memory_service = MemoryService(db)
-        memories = memory_service.get_all_memories()
+        memories = memory_service.get_all_memories(user_id=current_user.id)
 
         return {
             "factual": [

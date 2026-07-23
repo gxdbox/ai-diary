@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @EnvironmentObject var authService: AuthService
     @State private var autoCleanText = true
     @State private var localEncryption = true
     @State private var faceIDEnabled = false
@@ -49,21 +50,21 @@ struct SettingsView: View {
         HStack(spacing: 16) {
             // 头像
             Circle()
-                .fill(Color(hex: "C4935A"))
+                .fill(Color(hex: authService.currentUser?.avatarColor ?? "C4935A"))
                 .frame(width: 56, height: 56)
                 .overlay(
-                    Text("我")
+                    Text(String(authService.currentUser?.nickname?.first ?? "我"))
                         .font(.system(size: 20, weight: .medium))
                         .foregroundColor(.white)
                 )
 
             // 用户信息
             VStack(alignment: .leading, spacing: 4) {
-                Text("松果收藏家")
+                Text(authService.currentUser?.nickname ?? "未命名用户")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(Color(hex: "1A1918"))
 
-                Text("珍藏每一颗记忆")
+                Text(authService.currentUser?.email ?? "")
                     .font(.system(size: 13))
                     .foregroundColor(Color(hex: "6D6C6A"))
             }
@@ -172,7 +173,7 @@ struct SettingsView: View {
 
     private var logoutButton: some View {
         Button {
-            // 退出登录操作
+            authService.logout()
         } label: {
             Text("退出登录")
                 .font(.system(size: 15))
@@ -239,4 +240,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+        .environmentObject(AuthService())
 }

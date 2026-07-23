@@ -7,7 +7,8 @@ from sqlalchemy import select
 from typing import List
 import json
 
-from app.db.database import get_db, Diary
+from app.db.database import get_db, Diary, User
+from app.core.security import get_current_user
 from app.models.diary import SearchRequest, SearchResponse, SearchResult
 from app.services.vector_store import vector_store
 from app.services.ai_service import ai_service
@@ -18,7 +19,8 @@ router = APIRouter()
 @router.post("/semantic", response_model=SearchResponse)
 async def semantic_search(
     request: SearchRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     语义搜索
@@ -26,13 +28,13 @@ async def semantic_search(
     """
     try:
         # 向量搜索
-        results = vector_store.search(request.query, request.limit)
+        results = vector_store.search(request.query, request.limit, user_id=current_user.id)
 
         # 获取完整日记信息
         search_results = []
         for r in results:
             result = await db.execute(
-                select(Diary).where(Diary.id == r["id"])
+                select(Diary).where(Diary.id == r["id"], Diary.user_id == current_user.id)
             )
             diary = result.scalar_one_or_none()
 
@@ -58,7 +60,8 @@ async def semantic_search(
 async def keyword_search(
     keyword: str = Query(..., description="搜索关键词"),
     limit: int = Query(10, ge=1, le=50),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     关键词搜索
@@ -67,7 +70,7 @@ async def keyword_search(
     try:
         result = await db.execute(
             select(Diary)
-            .where(Diary.cleaned_text.contains(keyword))
+            .where(Diary.cleaned_text.contains(keyword), Diary.user_id == current_user.id)
             .limit(limit)
         )
         diaries = result.scalars().all()
@@ -89,7 +92,8 @@ async def keyword_search(
 @router.post("/ask")
 async def ask_question(
     question: str = Query(..., description="用户问题"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     AI问答
@@ -97,7 +101,7 @@ async def ask_question(
     """
     try:
         # 先搜索相关日记
-        results = vector_store.search(question, n_results=5)
+        results = vector_store.search(question, n_results=5, user_id=current_user.id)
 
         if not results:
             return {
@@ -111,7 +115,7 @@ async def ask_question(
 
         for r in results:
             result = await db.execute(
-                select(Diary).where(Diary.id == r["id"])
+                select(Diary).where(Diary.id == r["id"], Diary.user_id == current_user.id)
             )
             diary = result.scalar_one_or_none()
 
@@ -135,7 +139,7 @@ async def ask_question(
 
 
 @router.get("/suggestions")
-async def get_search_suggestions():
+async def get_search_suggestions(current_user: User = Depends(get_current_user)):
     """
     获取搜索建议（快捷问题）
     """

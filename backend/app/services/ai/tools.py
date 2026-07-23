@@ -37,9 +37,11 @@ class DiaryToolRegistry:
         vector_store: VectorStore,
         memory_service: Optional[MemoryService] = None,
         insight_analyzer=None,
+        user_id: Optional[int] = None,
     ):
         self.db = db
         self.vector_store = vector_store
+        self.user_id = user_id
         self.memory_service = memory_service or MemoryService(db)
         # 延迟导入避免循环依赖
         if insight_analyzer is None:
@@ -182,7 +184,7 @@ class DiaryToolRegistry:
     async def _search_diaries(self, query: str, days: int = 30) -> str:
         """语义检索日记：向量召回 + DB 补全完整内容"""
         # 1. 向量语义检索
-        results = self.vector_store.search(query, n_results=5)
+        results = self.vector_store.search(query, n_results=5, user_id=self.user_id)
         if not results:
             return "未找到相关日记。"
 
@@ -197,9 +199,9 @@ class DiaryToolRegistry:
                     sa_text(
                         "SELECT id, cleaned_text, raw_text, emotion, "
                         "emotion_score, topics, created_at "
-                        "FROM diaries WHERE id = :did"
+                        "FROM diaries WHERE id = :did AND user_id = :uid"
                     ),
-                    {"did": diary_id},
+                    {"did": diary_id, "uid": self.user_id},
                 ).fetchone()
             except Exception:
                 continue
@@ -242,10 +244,10 @@ class DiaryToolRegistry:
             sa_text(
                 "SELECT id, cleaned_text, raw_text, emotion, emotion_score, "
                 "topics, key_events, created_at "
-                "FROM diaries WHERE created_at >= :cutoff "
+                "FROM diaries WHERE created_at >= :cutoff AND user_id = :uid "
                 "ORDER BY created_at DESC"
             ),
-            {"cutoff": cutoff},
+            {"cutoff": cutoff, "uid": self.user_id},
         ).fetchall()
 
         if not rows:
@@ -302,7 +304,7 @@ class DiaryToolRegistry:
     ) -> str:
         """检索用户记忆"""
         if memory_type == "factual":
-            factual = self.memory_service.get_factual_memory()
+            factual = self.memory_service.get_factual_memory(user_id=self.user_id)
             parts = []
             if factual.common_topics:
                 parts.append("常写主题：" + "、".join(factual.common_topics[:8]))
@@ -321,7 +323,7 @@ class DiaryToolRegistry:
             # 同时返回个体高重要性事实记忆（含对话中保存的自我认知）
             try:
                 raw_memories = self.memory_service._get_memories_by_type(
-                    MemoryType.FACTUAL, limit=20
+                    MemoryType.FACTUAL, limit=20, user_id=self.user_id
                 )
                 individual = []
                 for m in raw_memories:
@@ -340,7 +342,7 @@ class DiaryToolRegistry:
 
         else:  # episodic
             episodes = self.memory_service.find_similar_episodic(
-                keywords=keywords or [], limit=5
+                keywords=keywords or [], limit=5, user_id=self.user_id
             )
             if not episodes:
                 return "暂无相关情节记忆。"
@@ -363,7 +365,7 @@ class DiaryToolRegistry:
         if memory_type == "factual":
             # 用 content 的关键词作为 key
             key = content[:20] if len(content) > 20 else content
-            self.memory_service.update_factual_memory(key=key, value=content)
+            self.memory_service.update_factual_memory(key=key, value=content, user_id=self.user_id)
             return f"已保存为事实记忆：{content[:50]}"
         else:
             # 情节记忆需要更多字段，这里用简化版
@@ -373,5 +375,6 @@ class DiaryToolRegistry:
                 key_events=[],
                 emotion="neutral",
                 topics=[],
+                user_id=self.user_id,
             )
             return f"已保存为情节记忆：{content[:50]}"

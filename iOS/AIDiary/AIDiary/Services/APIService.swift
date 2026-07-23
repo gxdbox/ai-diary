@@ -8,11 +8,40 @@ private struct ErrorResponse: Decodable {
 class APIService {
     static let shared = APIService()
 
+    /// Token 过期通知名（用于全局监听并跳转登录页）
+    static let tokenExpiredNotification = Notification.Name("APIServiceTokenExpired")
+
     private var baseURL: String {
         AppConfig.baseURL
     }
 
     private init() {}
+
+    // MARK: - 认证辅助
+
+    /// 为 URLRequest 注入 Authorization header
+    private func addAuthHeader(to request: inout URLRequest) {
+        if let token = KeychainService.shared.loadToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+    }
+
+    /// 带 auth header 的 GET 请求
+    private func authGET(_ urlString: String) async throws -> (Data, URLResponse) {
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        addAuthHeader(to: &request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
+        return (data, response)
+    }
+
+    /// 检查响应是否为 401，如果是则发送通知
+    private func checkTokenExpired(_ response: URLResponse) {
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
+            NotificationCenter.default.post(name: APIService.tokenExpiredNotification, object: nil)
+        }
+    }
 
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -54,32 +83,32 @@ class APIService {
 
         print("Fetching diaries from: \(url.absoluteString)")
 
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 
     func fetchFilters() async throws -> FilterOptions {
         let url = URL(string: "\(baseURL)/api/diary/filters")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 
     func fetchStats() async throws -> Stats {
         let url = URL(string: "\(baseURL)/api/analysis/stats")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 
     func fetchInsights(days: Int = 7) async throws -> [Insight] {
         let url = URL(string: "\(baseURL)/api/analysis/insights?days=\(days)")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         let response: InsightsResponse = try decode(data)
         return response.insights
     }
 
     func fetchDeepInsights(days: Int = 90) async throws -> DeepInsightResponse {
         let url = URL(string: "\(baseURL)/api/analysis/deep-insights?days=\(days)")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 
@@ -87,6 +116,7 @@ class APIService {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/create")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
 
         var body: [String: Any] = ["raw_text": rawText]
         if let duration = recordingDuration {
@@ -94,15 +124,19 @@ class APIService {
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         return try decode(data)
     }
 
     func deleteDiary(id: Int) async throws {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/\(id)")!)
         request.httpMethod = "DELETE"
+        addAuthHeader(to: &request)
         let (_, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            checkTokenExpired(response)
             throw URLError(.badServerResponse)
         }
     }
@@ -112,8 +146,10 @@ class APIService {
         var request = URLRequest(url: URL(string: urlString)!)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         return try decode(data)
     }
 
@@ -126,6 +162,7 @@ class APIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
 
         var body = Data()
         let audioData = try Data(contentsOf: audioFileURL)
@@ -139,13 +176,14 @@ class APIService {
 
         request.httpBody = body
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         return try decode(data)
     }
 
     func getAudioURL(diaryId: Int) async throws -> URL {
         let url = URL(string: "\(baseURL)/api/diary/\(diaryId)/audio-url")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
 
         struct AudioURLResponse: Codable {
             let audioURL: String
@@ -165,15 +203,17 @@ class APIService {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/search/semantic")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: ["query": query, "limit": 10])
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         return try decode(data)
     }
 
     func fetchEmotionTrend(days: Int = 7) async throws -> [EmotionTrendData] {
         let url = URL(string: "\(baseURL)/api/analysis/emotion/trend?days=\(days)")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         let response: EmotionTrendResponse = try decode(data)
         return response.trend
     }
@@ -187,6 +227,7 @@ class APIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
 
         // 支持传递对话历史
         var body: [String: Any] = [:]
@@ -195,7 +236,8 @@ class APIService {
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         return try decode(data)
     }
 
@@ -206,6 +248,7 @@ class APIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
 
         var body: [String: Any] = ["message": message, "reflect": reflect]
         if let history = conversationHistory, !history.isEmpty {
@@ -214,6 +257,7 @@ class APIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data)
             throw NSError(domain: "", code: (response as? HTTPURLResponse)?.statusCode ?? 0,
@@ -231,6 +275,7 @@ class APIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
 
         let body: [String: Any] = [
             "memory_ids": memoryIds,
@@ -239,6 +284,7 @@ class APIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -248,7 +294,7 @@ class APIService {
 
     func fetchDictionary() async throws -> DictionaryListResponse {
         let url = URL(string: "\(baseURL)/api/dictionary/list")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 
@@ -256,9 +302,11 @@ class APIService {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/dictionary/add")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: ["word": word])
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
@@ -273,7 +321,9 @@ class APIService {
     func deleteDictionaryEntry(id: Int) async throws {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/dictionary/\(id)")!)
         request.httpMethod = "DELETE"
+        addAuthHeader(to: &request)
         let (_, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -283,9 +333,11 @@ class APIService {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/dictionary/\(id)")!)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: ["word": word])
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         return try decode(data)
     }
 
@@ -295,6 +347,7 @@ class APIService {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/weather")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
 
         let body: [String: Any] = [
             "diary_id": diaryId,
@@ -308,6 +361,7 @@ class APIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -320,6 +374,7 @@ class APIService {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/images/upload")!)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
 
         var body = Data()
         // diary_id 字段
@@ -338,6 +393,7 @@ class APIService {
         request.httpBody = body
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -348,6 +404,7 @@ class APIService {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/images")!)
         request.httpMethod = "DELETE"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
 
         let body: [String: Any] = [
             "diary_id": diaryId,
@@ -356,6 +413,7 @@ class APIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, response) = try await URLSession.shared.data(for: request)
+        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -374,7 +432,7 @@ class APIService {
             throw URLError(.badURL)
         }
 
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 
@@ -389,26 +447,26 @@ class APIService {
             throw URLError(.badURL)
         }
 
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 
     func fetchLocations(limit: Int = 100) async throws -> [Location] {
         let url = URL(string: "\(baseURL)/api/world/locations?limit=\(limit)")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 
     func fetchWorldStats() async throws -> WorldStats {
         let url = URL(string: "\(baseURL)/api/world/stats")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 
     func fetchCharacterTimeline(characterName: String, limit: Int = 50) async throws -> CharacterTimelineResponse {
         let encodedName = characterName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? characterName
         let url = URL(string: "\(baseURL)/api/world/timeline/\(encodedName)?limit=\(limit)")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 
@@ -423,7 +481,7 @@ class APIService {
             throw URLError(.badURL)
         }
 
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await authGET(url.absoluteString)
         return try decode(data)
     }
 }
