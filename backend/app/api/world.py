@@ -9,7 +9,8 @@ from sqlalchemy import select, func, desc
 from typing import List, Optional
 from datetime import datetime
 
-from app.db.database import get_db, Diary, Character, Relationship, Location, CharacterAlias
+from app.db.database import get_db, Diary, Character, Relationship, Location, CharacterAlias, User
+from app.core.security import get_current_user
 from app.models.diary import (
     AliasResponse,
     CharacterResponse,
@@ -73,7 +74,8 @@ def _relationship_to_response(rel: Relationship, char_a: Character = None, char_
 async def get_characters(
     limit: int = Query(100, ge=1, le=500, description="返回数量限制"),
     sort_by: str = Query("appearance_count", description="排序字段: appearance_count/last_appearance/name"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取所有人物列表
@@ -90,6 +92,7 @@ async def get_characters(
 
         result = await db.execute(
             select(Character)
+            .where(Character.user_id == current_user.id)
             .order_by(order_by)
             .limit(limit)
         )
@@ -110,7 +113,8 @@ async def get_characters(
 async def get_relationships(
     min_strength: float = Query(0.0, ge=0, le=1, description="最小关系强度"),
     limit: int = Query(200, ge=1, le=1000, description="返回数量限制"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取人物关系图谱
@@ -118,7 +122,10 @@ async def get_relationships(
     可选过滤最低关系强度
     """
     try:
-        query = select(Relationship).where(Relationship.strength >= min_strength)
+        query = select(Relationship).where(
+            Relationship.strength >= min_strength,
+            Relationship.user_id == current_user.id
+        )
 
         result = await db.execute(
             query.order_by(desc(Relationship.strength)).limit(limit)
@@ -148,7 +155,8 @@ async def get_relationships(
 @router.get("/locations", response_model=List[LocationResponse])
 async def get_locations(
     limit: int = Query(100, ge=1, le=500, description="返回数量限制"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取所有地点列表
@@ -156,6 +164,7 @@ async def get_locations(
     try:
         result = await db.execute(
             select(Location)
+            .where(Location.user_id == current_user.id)
             .order_by(desc(Location.visit_count))
             .limit(limit)
         )
@@ -179,7 +188,8 @@ async def get_locations(
 async def get_character_timeline(
     character_name: str,
     limit: int = Query(50, ge=1, le=200, description="返回日记数量限制"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取某个人物的时间轴（相关日记）
@@ -188,7 +198,7 @@ async def get_character_timeline(
     """
     try:
         result = await db.execute(
-            select(Character).where(Character.name == character_name)
+            select(Character).where(Character.name == character_name, Character.user_id == current_user.id)
         )
         character = result.scalar_one_or_none()
 
@@ -210,11 +220,11 @@ async def get_character_timeline(
         diary_result = await db.execute(
             sql_text(f"""
                 SELECT * FROM diaries
-                WHERE {conditions}
+                WHERE user_id = :user_id AND ({conditions})
                 ORDER BY created_at DESC
                 LIMIT :limit
             """),
-            params
+            {**params, "user_id": current_user.id}
         )
         rows = diary_result.fetchall()
 
@@ -267,24 +277,25 @@ async def get_character_timeline(
 
 
 @router.get("/stats", response_model=WorldStatsResponse)
-async def get_world_stats(db: AsyncSession = Depends(get_db)):
+async def get_world_stats(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     获取虚拟世界统计信息
 
     包括人物总数、关系总数、最活跃人物、最强关系等
     """
     try:
-        char_count_result = await db.execute(select(func.count()).select_from(Character))
+        char_count_result = await db.execute(select(func.count()).select_from(Character).where(Character.user_id == current_user.id))
         total_characters = char_count_result.scalar()
 
-        rel_count_result = await db.execute(select(func.count()).select_from(Relationship))
+        rel_count_result = await db.execute(select(func.count()).select_from(Relationship).where(Relationship.user_id == current_user.id))
         total_relationships = rel_count_result.scalar()
 
-        loc_count_result = await db.execute(select(func.count()).select_from(Location))
+        loc_count_result = await db.execute(select(func.count()).select_from(Location).where(Location.user_id == current_user.id))
         total_locations = loc_count_result.scalar()
 
         most_active_result = await db.execute(
             select(Character)
+            .where(Character.user_id == current_user.id)
             .order_by(desc(Character.appearance_count))
             .limit(1)
         )
@@ -292,6 +303,7 @@ async def get_world_stats(db: AsyncSession = Depends(get_db)):
 
         strongest_rel_result = await db.execute(
             select(Relationship)
+            .where(Relationship.user_id == current_user.id)
             .order_by(desc(Relationship.strength))
             .limit(1)
         )
@@ -332,7 +344,8 @@ async def get_world_stats(db: AsyncSession = Depends(get_db)):
 async def search_characters(
     query: str = Query(..., min_length=1, description="搜索关键词"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     搜索人物
@@ -346,12 +359,13 @@ async def search_characters(
             sql_text("""
                 SELECT DISTINCT c.* FROM characters c
                 LEFT JOIN character_aliases ca ON ca.character_id = c.id
-                WHERE c.name LIKE :pattern
-                   OR ca.alias LIKE :pattern
+                WHERE c.user_id = :user_id
+                  AND (c.name LIKE :pattern
+                   OR ca.alias LIKE :pattern)
                 ORDER BY c.appearance_count DESC
                 LIMIT :limit
             """),
-            {"pattern": f"%{query}%", "limit": limit}
+            {"user_id": current_user.id, "pattern": f"%{query}%", "limit": limit}
         )
         rows = result.fetchall()
 
@@ -377,7 +391,8 @@ async def search_characters(
 @router.get("/aliases/{character_id}", response_model=List[AliasResponse])
 async def get_character_aliases(
     character_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取某个人物的所有别名

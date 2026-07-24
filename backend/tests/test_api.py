@@ -4,13 +4,36 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 from app.main import app
+from app.db.database import init_db
 
 
 @pytest.fixture
 async def client():
+    await init_db()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+async def auth_headers(client):
+    """注册或登录测试用户并返回认证 header"""
+    # 先尝试注册
+    resp = await client.post("/api/auth/register", json={
+        "email": "apitest@test.com",
+        "password": "test123456",
+        "nickname": "API测试用户",
+    })
+    if resp.status_code == 200:
+        token = resp.json()["access_token"]
+    else:
+        # 用户已存在，直接登录
+        resp = await client.post("/api/auth/login", data={
+            "username": "apitest@test.com",
+            "password": "test123456",
+        })
+        token = resp.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.mark.asyncio
@@ -52,11 +75,12 @@ async def test_root(client):
 
 
 @pytest.mark.asyncio
-async def test_clean_text(client):
+async def test_clean_text(client, auth_headers):
     """测试文本清洗"""
     response = await client.post(
         "/api/diary/clean",
-        json={"raw_text": "嗯，今天天气不错啊，我想出去走走。"}
+        json={"raw_text": "嗯，今天天气不错啊，我想出去走走。"},
+        headers=auth_headers
     )
     assert response.status_code == 200
     data = response.json()
@@ -65,11 +89,12 @@ async def test_clean_text(client):
 
 
 @pytest.mark.asyncio
-async def test_analyze(client):
+async def test_analyze(client, auth_headers):
     """测试文本分析"""
     response = await client.post(
         "/api/analysis/analyze",
-        json={"text": "今天工作很顺利，心情很好，完成了重要项目。"}
+        json={"text": "今天工作很顺利，心情很好，完成了重要项目。"},
+        headers=auth_headers
     )
     assert response.status_code == 200
     data = response.json()
@@ -78,9 +103,9 @@ async def test_analyze(client):
 
 
 @pytest.mark.asyncio
-async def test_search_suggestions(client):
+async def test_search_suggestions(client, auth_headers):
     """测试搜索建议"""
-    response = await client.get("/api/search/suggestions")
+    response = await client.get("/api/search/suggestions", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "suggestions" in data
@@ -88,9 +113,9 @@ async def test_search_suggestions(client):
 
 
 @pytest.mark.asyncio
-async def test_stats(client):
+async def test_stats(client, auth_headers):
     """测试统计接口"""
-    response = await client.get("/api/analysis/stats")
+    response = await client.get("/api/analysis/stats", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "total_diaries" in data

@@ -128,4 +128,5 @@ extension Color {
 
 #Preview {
     ContentView()
+        .environmentObject(AuthService())
 }

@@ -88,15 +88,27 @@ class VectorStore:
         except Exception as e:
             logger.error(f"删除日记向量失败: {str(e)}")
 
-    def search(self, query: str, n_results: int = 10) -> List[Dict]:
-        """语义搜索"""
+    def search(self, query: str, n_results: int = 10, user_id: int = None) -> List[Dict]:
+        """语义搜索
+
+        Args:
+            query: 搜索文本
+            n_results: 返回数量
+            user_id: 可选，按用户过滤结果
+        """
         if not self._initialized:
             self.init()
 
         try:
+            # 构建 where 条件（按用户隔离）
+            where_clause = None
+            if user_id is not None:
+                where_clause = {"user_id": user_id}
+
             results = self.collection.query(
                 query_texts=[query],
-                n_results=n_results
+                n_results=n_results,
+                where=where_clause
             )
 
             # 格式化结果

@@ -10,6 +10,14 @@ class DiaryCreate(BaseModel):
     """创建日记请求"""
     raw_text: str = Field(..., description="原始语音转写文本")
     recording_duration: Optional[int] = Field(None, description="录音时长(秒)")
+    audio_url: Optional[str] = Field(None, description="音频文件 OSS URL")
+
+
+class TranscribeResponse(BaseModel):
+    """音频转写响应"""
+    raw_text: str = Field(..., description="转写文本（带标点）")
+    audio_url: Optional[str] = Field(None, description="音频文件 OSS URL")
+    used_cloud_asr: bool = Field(False, description="是否使用了云端 ASR")
 
 
 class DiaryResponse(BaseModel):

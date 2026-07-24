@@ -6,6 +6,7 @@ from sqlalchemy.orm import declarative_base, Session
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime, create_engine, text as sa_text
 from datetime import datetime
 import os
+import secrets
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./ai_diary.db")
 SYNC_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ai_diary.db").replace("+aiosqlite", "")
@@ -19,11 +20,25 @@ sync_engine = create_engine(SYNC_DATABASE_URL, echo=False)
 Base = declarative_base()
 
 
+class User(Base):
+    """用户模型"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False, comment="邮箱")
+    hashed_password = Column(String(255), nullable=False, comment="哈希密码")
+    nickname = Column(String(50), nullable=True, comment="昵称")
+    avatar_color = Column(String(20), default="#C4935A", comment="头像颜色")
+    created_at = Column(DateTime, default=datetime.utcnow, comment="注册时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+
+
 class Diary(Base):
     """日记数据模型"""
     __tablename__ = "diaries"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True, comment="用户 ID")
     raw_text = Column(Text, nullable=False, comment="原始语音转写文本")
     title = Column(String(100), nullable=True, comment="日记标题")
     cleaned_text = Column(Text, nullable=True, comment="AI清洗后的文本")
@@ -51,8 +66,11 @@ class DictionaryEntry(Base):
     __tablename__ = "dictionary"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True, comment="用户 ID")
     word = Column(String(100), nullable=False, comment="正确词")
     pinyin = Column(String(200), nullable=False, comment="拼音（用于同音词匹配）")
+    source = Column(String(50), default="manual", comment="来源: manual/auto/confirmed")
+    correction_count = Column(Integer, default=0, comment="被拼音校正使用的次数")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
@@ -62,7 +80,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, default=1, comment="用户 ID")
+    user_id = Column(Integer, nullable=True, index=True, comment="用户 ID")
     diary_id = Column(Integer, nullable=True, comment="关联的日记 ID")
     user_input = Column(Text, nullable=False, comment="用户输入")
     ai_response = Column(Text, nullable=False, comment="AI 回复")
@@ -77,7 +95,8 @@ class Character(Base):
     __tablename__ = "characters"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), unique=True, nullable=False, comment="人物名称")
+    user_id = Column(Integer, nullable=True, index=True, comment="用户 ID")
+    name = Column(String(100), nullable=False, comment="人物名称")
     first_appearance = Column(DateTime, nullable=False, comment="首次出现时间")
     last_appearance = Column(DateTime, nullable=False, comment="最后出现时间")
     appearance_count = Column(Integer, default=0, comment="出现次数")
@@ -91,6 +110,7 @@ class Relationship(Base):
     __tablename__ = "relationships"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True, comment="用户 ID")
     character_a_id = Column(Integer, nullable=False, comment="人物A ID")
     character_b_id = Column(Integer, nullable=False, comment="人物B ID")
     relationship_type = Column(String(50), default="unknown", comment="关系类型：朋友/家人/同事等")
@@ -105,6 +125,7 @@ class CharacterAlias(Base):
     __tablename__ = "character_aliases"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True, comment="用户 ID")
     character_id = Column(Integer, nullable=False, index=True, comment="关联人物 ID")
     alias = Column(String(100), nullable=False, comment="别名")
     source = Column(String(50), default="auto", comment="来源: auto/llm/manual")
@@ -117,7 +138,8 @@ class Location(Base):
     __tablename__ = "locations"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(200), unique=True, nullable=False, comment="地点名称")
+    user_id = Column(Integer, nullable=True, index=True, comment="用户 ID")
+    name = Column(String(200), nullable=False, comment="地点名称")
     visit_count = Column(Integer, default=0, comment="访问次数")
     last_visit = Column(DateTime, nullable=True, comment="最后访问时间")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
@@ -205,6 +227,54 @@ async def init_db():
             await conn.run_sync(add_character_aliases_table)
         except Exception as e:
             print(f"[DB Migration] character_aliases table migration: {e}")
+        # 安全迁移：为 dictionary 表添加 source 列
+        try:
+            def add_dictionary_source_column(connection):
+                result = connection.execute(
+                    sa_text("PRAGMA table_info(dictionary)")
+                )
+                columns = [row[1] for row in result]
+                if "source" not in columns:
+                    connection.execute(
+                        sa_text("ALTER TABLE dictionary ADD COLUMN source VARCHAR(50) DEFAULT 'manual'")
+                    )
+            await conn.run_sync(add_dictionary_source_column)
+        except Exception as e:
+            print(f"[DB Migration] dictionary source column migration: {e}")
+        # 安全迁移：为 dictionary 表添加 correction_count 列
+        try:
+            def add_correction_count_column(connection):
+                result = connection.execute(
+                    sa_text("PRAGMA table_info(dictionary)")
+                )
+                columns = [row[1] for row in result]
+                if "correction_count" not in columns:
+                    connection.execute(
+                        sa_text("ALTER TABLE dictionary ADD COLUMN correction_count INTEGER DEFAULT 0")
+                    )
+            await conn.run_sync(add_correction_count_column)
+        except Exception as e:
+            print(f"[DB Migration] dictionary correction_count column migration: {e}")
+        # 安全迁移：为各表添加 user_id 列（多用户支持）
+        try:
+            def add_user_id_columns(connection):
+                tables_to_migrate = [
+                    "diaries", "conversations", "characters",
+                    "relationships", "character_aliases",
+                    "locations", "dictionary"
+                ]
+                for table_name in tables_to_migrate:
+                    result = connection.execute(
+                        sa_text(f"PRAGMA table_info({table_name})")
+                    )
+                    columns = [row[1] for row in result]
+                    if "user_id" not in columns:
+                        connection.execute(
+                            sa_text(f"ALTER TABLE {table_name} ADD COLUMN user_id INTEGER")
+                        )
+            await conn.run_sync(add_user_id_columns)
+        except Exception as e:
+            print(f"[DB Migration] user_id columns migration: {e}")
 
 
 async def get_db():

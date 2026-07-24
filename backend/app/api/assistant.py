@@ -13,7 +13,8 @@ from sqlalchemy import select
 from typing import Dict, List, Optional
 import json
 
-from app.db.database import get_sync_db, Diary
+from app.db.database import get_sync_db, Diary, User
+from app.core.security import get_current_user_sync
 from app.models.memory import (
     RetrievalRequest, ProactiveRetrievalResponse
 )
@@ -37,7 +38,8 @@ class AskRequest(BaseModel):
 async def ask_question(
     question: str = Query(..., description="用户问题"),
     request: Optional[AskRequest] = None,
-    db: Session = Depends(get_sync_db)
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """
     AI 智能问答（升级版 - 整合上下文管理）
@@ -58,7 +60,7 @@ async def ask_question(
         conversation_history = request.conversation_history if request else None
         context = context_service.build_context(
             user_input=question,
-            user_id=1,
+            user_id=current_user.id,
             conversation_history=conversation_history or [],
             budget=ContextBudget()
         )

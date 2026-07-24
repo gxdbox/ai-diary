@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 
-from app.db.database import get_sync_db
+from app.db.database import get_sync_db, User
+from app.core.security import get_current_user_sync
 from app.services.companion import CompanionService
 
 router = APIRouter()
@@ -38,6 +39,7 @@ class DiaryRespondRequest(BaseModel):
 async def chat(
     request: ChatRequest,
     db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """情感陪伴对话"""
     if not request.message.strip():
@@ -47,6 +49,7 @@ async def chat(
     try:
         result = await service.chat(
             user_input=request.message,
+            user_id=current_user.id,
             conversation_history=request.conversation_history,
             diary_id=request.diary_id,
         )
@@ -65,10 +68,11 @@ async def get_history(
     limit: int = Query(10, ge=1, le=100),
     mode: Optional[str] = Query(None, description="过滤模式: companion/assistant"),
     db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """获取对话历史"""
     service = CompanionService(db)
-    history = service.get_conversation_history(limit=limit, mode=mode)
+    history = service.get_conversation_history(user_id=current_user.id, limit=limit, mode=mode)
     return {"conversations": history, "count": len(history)}
 
 
@@ -76,14 +80,15 @@ async def get_history(
 async def respond_to_diary(
     request: DiaryRespondRequest,
     db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """AI 对日记内容进行情感回应"""
     from sqlalchemy import select, text as sql_text
     from app.db.database import Diary
 
     diary_result = db.execute(
-        sql_text("SELECT id, cleaned_text, emotion FROM diaries WHERE id = :id"),
-        {"id": request.diary_id},
+        sql_text("SELECT id, cleaned_text, emotion FROM diaries WHERE id = :id AND user_id = :user_id"),
+        {"id": request.diary_id, "user_id": current_user.id},
     )
     row = diary_result.fetchone()
     if not row:
@@ -96,6 +101,7 @@ async def respond_to_diary(
     try:
         result = await service.chat(
             user_input=f"我今天写了一篇日记：{diary_text}",
+            user_id=current_user.id,
             diary_id=request.diary_id,
         )
         return {

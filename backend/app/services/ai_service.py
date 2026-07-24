@@ -39,29 +39,85 @@ class AIService:
             kwargs["temperature"] = temperature
         return await llm.chat(messages, **kwargs)
 
-    async def clean_text(self, raw_text: str) -> str:
-        """清洗语音转写文本 — 使用 System Prompt 纠正 ASR 同音词错误
+    async def clean_text(self, raw_text: str, context_summary: str = None, user_id: int = None) -> str:
+        """清洗语音转写文本 — 两遍清洗架构（Typeless 式）
 
         处理流程：
-        - 将自定义词典注入到 System Prompt，作为 AI 的纠错参考
-        - AI 根据上下文语义判断是否需要纠正（不会强行替换）
-        - 移除前置/后置强制替换逻辑，避免破坏原文
-        """
-        from app.api.dictionary import dictionary_words
+        - 第一遍（规则引擎）：
+          1a. 拼音模糊匹配校正（修复同音词/近音词）
+          1b. 规则清洗（填充词删除、标点转换、常见错误修复）
+        - 第二遍（LLM 语义精洗）：
+          标点补充、同音词消歧、填充词清理、保持口语风格
+        - 自定义词典同时注入 LLM prompt 作为参考
+        - 用户近期上下文注入 prompt 辅助同音词消歧
 
-        # 构建 System Prompt（注入自定义词典作为参考）
+        Args:
+            raw_text: 原始转写文本
+            context_summary: 用户近期日记上下文摘要
+            user_id: 用户 ID，用于获取用户特定的词典缓存
+        """
+        from app.api.dictionary import dictionary_words, apply_dictionary_correction
+        from app.services.text_cleaner import text_cleaner
+
+        # === 第一遍：规则引擎快速预处理 ===
+        pre_corrected = raw_text
+
+        # 1a. 拼音模糊匹配校正（修复同音词/近音词）— 使用用户特定的词典缓存
+        try:
+            pre_corrected = apply_dictionary_correction(pre_corrected, user_id=user_id)
+        except Exception as e:
+            logger.warning(f"拼音前置校正失败，跳过: {e}")
+
+        # 1b. 规则清洗（填充词删除、标点转换、常见错误修复）
+        try:
+            pre_corrected = text_cleaner.clean(pre_corrected)
+        except Exception as e:
+            logger.warning(f"规则清洗失败，跳过: {e}")
+
+        # === 第二遍：LLM 语义级精洗 ===
         system_prompt = build_cleaner_prompt(
-            list(dictionary_words) if dictionary_words else None
+            list(dictionary_words) if dictionary_words else None,
+            context_summary
         )
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": CLEAN_TEXT_USER_TEMPLATE.format(text=raw_text)},
+            {"role": "user", "content": CLEAN_TEXT_USER_TEMPLATE.format(text=pre_corrected)},
         ]
 
         result = await self.call_llm_with_messages(
             messages, max_tokens=2000, temperature=0.2
         )
         return result.strip()
+
+    async def extract_proper_nouns(self, text: str) -> List[str]:
+        """提取文本中的专有名词（人名、地名、术语等）用于自动学习词典"""
+        prompt = f"""请从以下日记内容中提取专有名词（人名、地名、机构名、产品名、专业术语等）。
+
+日记内容：
+{text}
+
+提取要求：
+1. 只提取明确的专有名词，不要提取普通词语
+2. 人名优先（如：桐桐、小明、王总）
+3. 地名（如：朝阳公园、星巴克）
+4. 术语/产品名（如：Claude Code、SwiftUI）
+5. 不要提取代词、动词、形容词等
+
+请返回JSON格式：["名词1", "名词2", ...]
+如果没有专有名词，返回空数组：[]"""
+
+        result = await self.call_llm(prompt, max_tokens=200, temperature=0.1)
+        try:
+            json_str = result.strip()
+            if "```json" in json_str:
+                json_str = json_str.split("```json")[1].split("```")[0]
+            elif "```" in json_str:
+                json_str = json_str.split("```")[1].split("```")[0]
+            nouns = json.loads(json_str)
+            return [n.strip() for n in nouns if isinstance(n, str) and len(n.strip()) >= 2][:10]
+        except json.JSONDecodeError:
+            logger.warning(f"专有名词提取JSON解析失败: {result}")
+            return []
 
     async def analyze_emotion(self, text: str) -> Dict:
         """分析文本情绪 - 使用能量值+强度双维度体系"""

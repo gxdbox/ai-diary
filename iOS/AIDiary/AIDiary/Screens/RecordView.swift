@@ -252,20 +252,42 @@ struct RecordView: View {
         isProcessing = true
         Task {
             do {
-                var diary = try await APIService.shared.createDiary(
-                    rawText: text,
-                    recordingDuration: speechService.recordingDuration
-                )
+                // 混合录音流程：先尝试云端 ASR 转写（更准确、带标点）
+                var finalText = text
+                var cloudAudioURL: String? = nil
 
-                // 上传音频文件（如果存在）
                 if let audioFileURL = audioURL {
                     do {
+                        let result = try await APIService.shared.transcribeAudio(audioFileURL: audioFileURL)
+                        if result.usedCloudASR && !result.rawText.isEmpty {
+                            // 云端 ASR 成功，用云端结果替代本地结果
+                            finalText = result.rawText
+                        }
+                        cloudAudioURL = result.audioURL
+                    } catch {
+                        // 云端 ASR 失败，用本地转写结果兌底
+                        print("云端 ASR 转写失败，使用本地转写结果: \(error)")
+                    }
+                }
+
+                // 创建日记（如果云端 ASR 上传了音频，直接传入 audio_url）
+                var diary = try await APIService.shared.createDiary(
+                    rawText: finalText,
+                    recordingDuration: speechService.recordingDuration,
+                    audioURL: cloudAudioURL
+                )
+
+                // 如果云端 ASR 未上传音频，仍需单独上传音频文件
+                if cloudAudioURL == nil, let audioFileURL = audioURL {
+                    do {
                         diary = try await APIService.shared.uploadAudio(diaryId: diary.id, audioFileURL: audioFileURL)
-                        // 清理临时音频文件
                         try? FileManager.default.removeItem(at: audioFileURL)
                     } catch {
                         print("音频上传失败: \(error)")
                     }
+                } else if let audioFileURL = audioURL {
+                    // 云端 ASR 已上传音频，清理临时文件
+                    try? FileManager.default.removeItem(at: audioFileURL)
                 }
 
                 // 立即保存到缓存（自动保存，用户关闭也不会丢失）

@@ -18,7 +18,8 @@ from typing import Optional, List, Dict
 from datetime import datetime
 import logging
 
-from app.db.database import get_sync_db
+from app.db.database import get_sync_db, User
+from app.core.security import get_current_user_sync
 from app.services.ai.agent import DiaryAgent
 from app.services.ai.tools import DiaryToolRegistry
 from app.services.vector_store import vector_store
@@ -48,6 +49,7 @@ class AgentChatResponse(BaseModel):
 async def chat(
     request: AgentChatRequest,
     db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """
     Agent 对话（tool-calling loop）
@@ -73,7 +75,7 @@ async def chat(
         # 保存对话记录（mode=agent）
         conv_id = _save_conversation(
             db,
-            user_id=1,
+            user_id=current_user.id,
             user_input=request.message,
             ai_response=result["response"],
             tool_usage=result.get("tool_usage", []),
@@ -96,6 +98,7 @@ async def chat(
 async def get_history(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_user_sync),
 ):
     """获取 Agent 对话历史"""
     try:
@@ -103,11 +106,11 @@ async def get_history(
             text("""
                 SELECT id, user_input, ai_response, mode, emotion_before, created_at
                 FROM conversations
-                WHERE mode = 'agent'
+                WHERE mode = 'agent' AND user_id = :user_id
                 ORDER BY created_at DESC
                 LIMIT :limit
             """),
-            {"limit": limit},
+            {"user_id": current_user.id, "limit": limit},
         )
         rows = result.fetchall()
         return {
@@ -132,7 +135,7 @@ async def get_history(
 
 
 @router.get("/capabilities")
-async def get_capabilities(db: Session = Depends(get_sync_db)):
+async def get_capabilities(db: Session = Depends(get_sync_db), current_user: User = Depends(get_current_user_sync)):
     """返回 Agent 可用工具列表（供前端展示 Agent 能力）"""
     registry = DiaryToolRegistry(db, vector_store)
     capabilities = []
