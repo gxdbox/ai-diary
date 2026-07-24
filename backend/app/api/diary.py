@@ -9,13 +9,16 @@ from datetime import datetime
 import json
 import asyncio
 import importlib
+import logging
 
-from app.db.database import get_db, Diary, User
+logger = logging.getLogger(__name__)
+
+from app.db.database import get_db, Diary, User, DictionaryEntry
 from app.core.security import get_current_user
 from app.models.diary import (
     DiaryCreate, DiaryResponse, DiaryListResponse,
     CleanTextRequest, CleanTextResponse, WeatherRequest,
-    ImageUploadResponse, ImageDeleteRequest
+    ImageUploadResponse, ImageDeleteRequest, TranscribeResponse
 )
 from app.services.ai_service import ai_service
 from app.services.text_cleaner import text_cleaner
@@ -23,11 +26,35 @@ from app.services.vector_store import vector_store
 from app.services.entity_extractor import EntityExtractor
 from app.services import oss_service
 from app.services.oss_service import OSSService
+from app.services.asr_service import asr_service
 
 router = APIRouter()
 
 
-def _async_learn_from_diary(diary_id: int, diary_data: dict, user_id: int = None):
+async def _get_context_summary(db: AsyncSession, user_id: int) -> str:
+    """获取用户近期日记上下文摘要，用于同音词消歧
+
+    从最近 5 篇日记中提取文本片段作为上下文，帮助 LLM 在清洗时
+    根据用户习惯用语消歧同音词。
+    """
+    try:
+        result = await db.execute(
+            select(Diary.cleaned_text)
+            .where(Diary.user_id == user_id, Diary.cleaned_text.isnot(None))
+            .order_by(desc(Diary.created_at))
+            .limit(5)
+        )
+        texts = result.scalars().all()
+        if not texts:
+            return ""
+        summaries = [t[:80] for t in texts if t]
+        return "；".join(summaries)
+    except Exception as e:
+        logger.warning(f"获取上下文摘要失败: {e}")
+        return ""
+
+
+def _async_learn_from_diary(diary_id: int, diary_data: dict):
     """
     异步学习日记内容（后台任务）
 
@@ -45,7 +72,7 @@ def _async_learn_from_diary(diary_id: int, diary_data: dict, user_id: int = None
         db = next(database_module.get_sync_db())
         DiaryAssistantService = diary_assistant_module.DiaryAssistantService
         assistant = DiaryAssistantService(db)
-        assistant.learn_from_diary(diary_id, diary_data, user_id=user_id)
+        assistant.learn_from_diary(diary_id, diary_data)
         db.close()
 
     except Exception as e:
@@ -53,7 +80,7 @@ def _async_learn_from_diary(diary_id: int, diary_data: dict, user_id: int = None
         print(f"[Memory Learning Error] diary_id={diary_id}: {e}")
 
 
-def _async_extract_entities(diary_id: int, cleaned_text: str, created_at: datetime, user_id: int = None):
+def _async_extract_entities(diary_id: int, cleaned_text: str, created_at: datetime):
     """
     异步提取日记中的实体（后台任务）
 
@@ -73,20 +100,94 @@ def _async_extract_entities(diary_id: int, cleaned_text: str, created_at: dateti
 
         # 构建已知实体上下文用于别名归一化
         normalizer = EntityNormalizer(db)
-        context = normalizer.build_context(user_id=user_id)
+        context = normalizer.build_context()
 
         # 提取实体
         import asyncio
         entities = asyncio.run(extractor.extract_entities(cleaned_text, context))
 
         # 保存实体
-        asyncio.run(extractor.save_entities(entities, diary_id, created_at, user_id=user_id))
+        asyncio.run(extractor.save_entities(entities, diary_id, created_at))
 
         db.close()
 
     except Exception as e:
         # 失败只记录日志，不影响用户
         print(f"[Entity Extraction Error] diary_id={diary_id}: {e}")
+
+
+def _async_auto_learn_dictionary(raw_text: str, cleaned_text: str, user_id: int):
+    """异步学习日记中的专有名词，自动添加到用户词典
+
+    同时统计词典词的校正次数，用于权重系统。
+    后台提取专有名词并添加到词典，标记 source='auto'。
+    """
+    try:
+        database_module = importlib.import_module('app.db.database')
+        ai_service_module = importlib.import_module('app.services.ai_service')
+        dictionary_module = importlib.import_module('app.api.dictionary')
+
+        db = next(database_module.get_sync_db())
+        DictionaryEntry = database_module.DictionaryEntry
+        AIService = ai_service_module.AIService
+        ai = AIService()
+
+        # 提取专有名词
+        nouns = asyncio.run(ai.extract_proper_nouns(cleaned_text))
+
+        # 获取已有词典词
+        from sqlalchemy import select as sa_select
+        from sqlalchemy import update as sa_update
+        existing_entries = db.execute(
+            sa_select(DictionaryEntry.word, DictionaryEntry.correction_count)
+            .where(DictionaryEntry.user_id == user_id)
+        ).all()
+        existing_words = {row[0]: row[1] or 0 for row in existing_entries}
+        existing_count = len(existing_words)
+
+        # 统计词典词的校正次数（比较 raw_text 和 cleaned_text）
+        for word in existing_words:
+            raw_count = raw_text.count(word)
+            cleaned_count = cleaned_text.count(word)
+            if cleaned_count > raw_count:
+                # 该词在清洗后出现次数增加，说明被校正了
+                delta = cleaned_count - raw_count
+                db.execute(
+                    sa_update(DictionaryEntry)
+                    .where(DictionaryEntry.word == word, DictionaryEntry.user_id == user_id)
+                    .values(correction_count=DictionaryEntry.correction_count + delta)
+                )
+
+        # 添加新词
+        get_pinyin = dictionary_module.get_pinyin
+        MAX_WORDS = dictionary_module.MAX_DICTIONARY_WORDS
+        added = 0
+        for noun in nouns:
+            if noun in existing_words:
+                continue
+            if existing_count + added >= MAX_WORDS:
+                break
+            new_entry = DictionaryEntry(
+                user_id=user_id,
+                word=noun,
+                pinyin=get_pinyin(noun),
+                source='auto'
+            )
+            db.add(new_entry)
+            added += 1
+            existing_words[noun] = 0
+
+        # 统一提交
+        if added > 0:
+            db.commit()
+            asyncio.run(dictionary_module.update_dictionary_cache())
+            print(f"[Dictionary Auto-Learn] Added {added} new words: {nouns[:added]}")
+        else:
+            db.commit()  # 仅提交权重更新
+
+        db.close()
+    except Exception as e:
+        print(f"[Dictionary Auto-Learn Error]: {e}")
 
 
 @router.post("/clean", response_model=CleanTextResponse)
@@ -108,6 +209,68 @@ async def clean_text(request: CleanTextRequest, current_user: User = Depends(get
         raise HTTPException(status_code=500, detail=f"文本清洗失败: {str(e)}")
 
 
+@router.post("/transcribe", response_model=TranscribeResponse)
+async def transcribe_audio(
+    audio_file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    音频转写 — 上传音频文件，使用云端 ASR 转写
+
+    1. 上传音频到 OSS
+    2. 从当前用户词典查询热词
+    3. 调用 DashScope Paraformer-v2 转写（带热词）
+    4. 返回带标点的转写文本（不经过 LLM 清洗，供前端预览）
+    """
+    try:
+        # 上传音频到 OSS
+        audio_oss_service = OSSService()
+        oss_url = await audio_oss_service.upload(audio_file)
+
+        # 生成签名 URL 供 ASR 服务访问（私有 Bucket 需要签名）
+        signed_url = audio_oss_service.get_signed_url(oss_url)
+
+        # 从数据库查询当前用户词典词作为热词（按用户隔离，带权重）
+        dict_result = await db.execute(
+            select(
+                DictionaryEntry.word,
+                DictionaryEntry.correction_count,
+                DictionaryEntry.source
+            ).where(DictionaryEntry.user_id == current_user.id)
+            .order_by(DictionaryEntry.correction_count.desc())
+        )
+        entries = dict_result.all()
+
+        # 构建带权重的热词字典（基于 correction_count 和 source）
+        hot_words = {}
+        for word, count, source in entries[:50]:
+            if source == 'confirmed':
+                weight = 90  # 用户确认的词权重最高
+            elif count and count > 5:
+                weight = min(80, 50 + count * 3)  # 高频词权重较高
+            else:
+                weight = 50 + (count or 0) * 2  # 基于校正次数调整
+            hot_words[word] = weight
+
+        # 调用云端 ASR 转写
+        raw_text = await asr_service.transcribe(signed_url, hot_words)
+        used_cloud_asr = bool(raw_text)
+
+        if not used_cloud_asr:
+            logger.warning("云端 ASR 不可用或转写失败，返回空文本")
+
+        return TranscribeResponse(
+            raw_text=raw_text,
+            audio_url=oss_url,
+            used_cloud_asr=used_cloud_asr
+        )
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"音频转写失败: {str(e)}")
+
+
 @router.post("/create", response_model=DiaryResponse)
 async def create_diary(
     request: DiaryCreate,
@@ -124,8 +287,17 @@ async def create_diary(
     5. [异步后台] 学习日记内容，更新记忆
     """
     try:
-        # AI清洗文本
-        cleaned_text = await ai_service.clean_text(request.raw_text)
+        # 加载用户词典缓存（用于拼音校正）
+        from app.api.dictionary import load_dictionary_cache
+        await load_dictionary_cache(db, user_id=current_user.id)
+
+        # 获取用户近期上下文摘要（用于同音词消歧）
+        context_summary = await _get_context_summary(db, current_user.id)
+
+        # AI清洗文本（两遍清洗 + 上下文消歧 + 用户词典）
+        cleaned_text = await ai_service.clean_text(
+            request.raw_text, context_summary=context_summary, user_id=current_user.id
+        )
 
         # AI分析
         analysis = await ai_service.full_analysis(cleaned_text)
@@ -147,6 +319,7 @@ async def create_diary(
             topics=json.dumps(analysis["topics"], ensure_ascii=False),
             key_events=json.dumps(analysis["key_events"], ensure_ascii=False),
             recording_duration=request.recording_duration,
+            audio_url=request.audio_url,
             word_count=len(cleaned_text)
         )
 
@@ -173,16 +346,24 @@ async def create_diary(
             "topics": analysis["topics"],
             "key_events": analysis["key_events"]
         }
-        background_tasks.add_task(_async_learn_from_diary, diary.id, diary_data, user_id=current_user.id)
+        background_tasks.add_task(_async_learn_from_diary, diary.id, diary_data)
 
         # [真正异步] 使用独立线程提取实体，完全不阻塞主流程
         import threading
         thread = threading.Thread(
             target=_async_extract_entities,
-            args=(diary.id, cleaned_text, diary.created_at, current_user.id),
+            args=(diary.id, cleaned_text, diary.created_at),
             daemon=True  # 守护线程，主程序退出时自动结束
         )
         thread.start()
+
+        # [真正异步] 自动学习词典词汇 + 权重统计
+        dict_thread = threading.Thread(
+            target=_async_auto_learn_dictionary,
+            args=(request.raw_text, cleaned_text, current_user.id),
+            daemon=True
+        )
+        dict_thread.start()
 
         return _diary_to_response(diary)
 

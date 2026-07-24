@@ -23,6 +23,11 @@ class SpeechService: NSObject, ObservableObject {
     private var recordedAudioURL: URL?
     private var isTapInstalled = false
 
+    // 实时标点：静音检测
+    private var silenceStartTime: Date?
+    private var punctuationTimer: Timer?
+    private let silenceThreshold: Float = 0.01
+
     private var isSimulator: Bool {
         #if targetEnvironment(simulator)
         return true
@@ -119,6 +124,7 @@ class SpeechService: NSObject, ObservableObject {
 
             self.isRecording = true
             self.startDurationTimer()
+            self.startPunctuationTimer()
         }
     }
 
@@ -134,7 +140,7 @@ class SpeechService: NSObject, ObservableObject {
             guard let self = self else { return }
 
             if let result = result {
-                self.transcribedText = result.bestTranscription.formattedString
+                self.transcribedText = self.buildTextWithPunctuation(from: result.bestTranscription)
                 onTextChange(self.transcribedText)
             }
             // 注意：这里绝不调用 stop/removeTap
@@ -166,12 +172,75 @@ class SpeechService: NSObject, ObservableObject {
         isTapInstalled = true
     }
 
+    /// 根据 ASR segment 间隙自动插入标点
+    /// 间隙 > 0.5s → 逗号，> 1.5s → 句号
+    private func buildTextWithPunctuation(from transcription: SFTranscription) -> String {
+        let segments = transcription.segments
+        guard !segments.isEmpty else { return transcription.formattedString }
+
+        var text = ""
+        for (index, segment) in segments.enumerated() {
+            if index > 0 {
+                let prev = segments[index - 1]
+                let prevEnd = prev.timestamp + prev.duration
+                let gap = segment.timestamp - prevEnd
+                if gap > 1.5 {
+                    text += "。"
+                } else if gap > 0.5 {
+                    text += "，"
+                }
+            }
+            text += segment.substring
+        }
+        return text.isEmpty ? transcription.formattedString : text
+    }
+
+    // MARK: - 实时标点（静音检测）
+
+    private func startPunctuationTimer() {
+        punctuationTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkTrailingSilence()
+        }
+    }
+
+    private func stopPunctuationTimer() {
+        punctuationTimer?.invalidate()
+        punctuationTimer = nil
+        silenceStartTime = nil
+    }
+
+    /// 检测录音尾部的静音段，自动追加标点
+    private func checkTrailingSilence() {
+        guard isRecording, !isPaused, !transcribedText.isEmpty else { return }
+
+        // 已有尾标点则跳过
+        let lastChar = transcribedText.last
+        if lastChar == "。" || lastChar == "，" || lastChar == "？" || lastChar == "！" {
+            return
+        }
+
+        if audioLevel < silenceThreshold {
+            if silenceStartTime == nil {
+                silenceStartTime = Date()
+            }
+            let silenceDuration = Date().timeIntervalSince(silenceStartTime!)
+            if silenceDuration > 1.5 {
+                transcribedText += "。"
+            } else if silenceDuration > 0.5 {
+                transcribedText += "，"
+            }
+        } else {
+            silenceStartTime = nil
+        }
+    }
+
     func pauseRecording() {
         guard isRecording, !isPaused else { return }
         isPaused = true
         pausedText = transcribedText
         timer?.invalidate()
         levelTimer?.invalidate()
+        punctuationTimer?.invalidate()
 
         if !isSimulator {
             audioEngine.pause()
@@ -190,6 +259,7 @@ class SpeechService: NSObject, ObservableObject {
                 try audioEngine.start()
                 startDurationTimer()
                 startLevelTimer()
+                startPunctuationTimer()
             } catch {
                 print("SpeechService: 恢复录音失败: \(error)")
                 isPaused = true
@@ -201,6 +271,7 @@ class SpeechService: NSObject, ObservableObject {
         transcribedText = ""
         pausedText = ""
         recordingDuration = 0
+        silenceStartTime = nil
     }
 
     private func startLevelTimer() {}
@@ -216,6 +287,7 @@ class SpeechService: NSObject, ObservableObject {
         isPaused = false
         recordingDuration = 0
         transcribedText = pausedText
+        startPunctuationTimer()
 
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             guard let self = self, !self.isPaused else { return }
@@ -237,6 +309,7 @@ class SpeechService: NSObject, ObservableObject {
         timer = nil
         levelTimer?.invalidate()
         levelTimer = nil
+        stopPunctuationTimer()
 
         audioRecorder?.stop()
         audioRecorder = nil
@@ -321,6 +394,7 @@ class SpeechService: NSObject, ObservableObject {
 
     func reset() {
         cleanupEngineState()
+        stopPunctuationTimer()
         transcribedText = ""
         pausedText = ""
         recordingDuration = 0
@@ -329,5 +403,6 @@ class SpeechService: NSObject, ObservableObject {
         isPaused = false
         recordedAudioURL = nil
         audioRecorder = nil
+        silenceStartTime = nil
     }
 }

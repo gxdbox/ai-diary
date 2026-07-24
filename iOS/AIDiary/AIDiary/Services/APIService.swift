@@ -31,9 +31,7 @@ class APIService {
         guard let url = URL(string: urlString) else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         addAuthHeader(to: &request)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
-        return (data, response)
+        return try await URLSession.shared.data(for: request)
     }
 
     /// 检查响应是否为 401，如果是则发送通知
@@ -112,7 +110,7 @@ class APIService {
         return try decode(data)
     }
 
-    func createDiary(rawText: String, recordingDuration: Int? = nil) async throws -> Diary {
+    func createDiary(rawText: String, recordingDuration: Int? = nil, audioURL: String? = nil) async throws -> Diary {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/create")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -122,10 +120,57 @@ class APIService {
         if let duration = recordingDuration {
             body["recording_duration"] = duration
         }
+        if let audioURL = audioURL {
+            body["audio_url"] = audioURL
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try decode(data)
+    }
+
+    // MARK: - 云端 ASR 转写
+
+    struct TranscribeResponse: Codable {
+        let rawText: String
+        let audioURL: String?
+        let usedCloudASR: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case rawText = "raw_text"
+            case audioURL = "audio_url"
+            case usedCloudASR = "used_cloud_asr"
+        }
+    }
+
+    /// 上传音频到后端进行云端 ASR 转写（DashScope Paraformer-v2）
+    /// - Returns: 转写文本（带标点）+ OSS audio_url，usedCloudASR 表示是否实际用了云端转写
+    func transcribeAudio(audioFileURL: URL) async throws -> TranscribeResponse {
+        let url = URL(string: "\(baseURL)/api/diary/transcribe")!
+        let boundary = UUID().uuidString
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        addAuthHeader(to: &request)
+
+        var body = Data()
+        let audioData = try Data(contentsOf: audioFileURL)
+        let fileName = audioFileURL.lastPathComponent
+
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"audio_file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/mp4\r\n\r\n".data(using: .utf8)!)
+        body.append(audioData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
         let (data, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            checkTokenExpired(response)
+            throw URLError(.badServerResponse)
+        }
         return try decode(data)
     }
 
@@ -134,7 +179,6 @@ class APIService {
         request.httpMethod = "DELETE"
         addAuthHeader(to: &request)
         let (_, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             checkTokenExpired(response)
             throw URLError(.badServerResponse)
@@ -148,8 +192,7 @@ class APIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         addAuthHeader(to: &request)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
+        let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)
     }
 
@@ -176,8 +219,7 @@ class APIService {
 
         request.httpBody = body
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
+        let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)
     }
 
@@ -206,8 +248,7 @@ class APIService {
         addAuthHeader(to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: ["query": query, "limit": 10])
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
+        let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)
     }
 
@@ -236,8 +277,7 @@ class APIService {
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
+        let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)
     }
 
@@ -257,7 +297,6 @@ class APIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data)
             throw NSError(domain: "", code: (response as? HTTPURLResponse)?.statusCode ?? 0,
@@ -284,7 +323,6 @@ class APIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -306,7 +344,6 @@ class APIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: ["word": word])
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
@@ -323,7 +360,6 @@ class APIService {
         request.httpMethod = "DELETE"
         addAuthHeader(to: &request)
         let (_, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -336,8 +372,7 @@ class APIService {
         addAuthHeader(to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: ["word": word])
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
+        let (data, _) = try await URLSession.shared.data(for: request)
         return try decode(data)
     }
 
@@ -361,7 +396,6 @@ class APIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -393,7 +427,6 @@ class APIService {
         request.httpBody = body
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -413,7 +446,6 @@ class APIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, response) = try await URLSession.shared.data(for: request)
-        checkTokenExpired(response)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }

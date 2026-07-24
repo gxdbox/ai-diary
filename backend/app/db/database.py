@@ -69,6 +69,8 @@ class DictionaryEntry(Base):
     user_id = Column(Integer, nullable=True, index=True, comment="用户 ID")
     word = Column(String(100), nullable=False, comment="正确词")
     pinyin = Column(String(200), nullable=False, comment="拼音（用于同音词匹配）")
+    source = Column(String(50), default="manual", comment="来源: manual/auto/confirmed")
+    correction_count = Column(Integer, default=0, comment="被拼音校正使用的次数")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
@@ -225,6 +227,34 @@ async def init_db():
             await conn.run_sync(add_character_aliases_table)
         except Exception as e:
             print(f"[DB Migration] character_aliases table migration: {e}")
+        # 安全迁移：为 dictionary 表添加 source 列
+        try:
+            def add_dictionary_source_column(connection):
+                result = connection.execute(
+                    sa_text("PRAGMA table_info(dictionary)")
+                )
+                columns = [row[1] for row in result]
+                if "source" not in columns:
+                    connection.execute(
+                        sa_text("ALTER TABLE dictionary ADD COLUMN source VARCHAR(50) DEFAULT 'manual'")
+                    )
+            await conn.run_sync(add_dictionary_source_column)
+        except Exception as e:
+            print(f"[DB Migration] dictionary source column migration: {e}")
+        # 安全迁移：为 dictionary 表添加 correction_count 列
+        try:
+            def add_correction_count_column(connection):
+                result = connection.execute(
+                    sa_text("PRAGMA table_info(dictionary)")
+                )
+                columns = [row[1] for row in result]
+                if "correction_count" not in columns:
+                    connection.execute(
+                        sa_text("ALTER TABLE dictionary ADD COLUMN correction_count INTEGER DEFAULT 0")
+                    )
+            await conn.run_sync(add_correction_count_column)
+        except Exception as e:
+            print(f"[DB Migration] dictionary correction_count column migration: {e}")
         # 安全迁移：为各表添加 user_id 列（多用户支持）
         try:
             def add_user_id_columns(connection):
