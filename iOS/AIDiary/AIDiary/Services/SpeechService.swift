@@ -11,6 +11,7 @@ class SpeechService: NSObject, ObservableObject {
     @Published var recordingDuration = 0
     @Published var audioLevel: Float = 0
     @Published var isPaused = false
+    @Published var realtimeASRText: String = ""  // 实时云端 ASR 结果
 
     private var audioEngine = AVAudioEngine()
     private var speechRecognizer: SFSpeechRecognizer?
@@ -28,6 +29,13 @@ class SpeechService: NSObject, ObservableObject {
     private var punctuationTimer: Timer?
     private let silenceThreshold: Float = 0.01
 
+    // 实时云端 ASR (WebSocket → DashScope)
+    private var asrWebSocket: URLSessionWebSocketTask?
+    private var asrWebSocketSession: URLSession?
+    private var asrAudioConverter: AVAudioConverter?
+    private var asrOutputFormat: AVAudioFormat?
+    private var isASRConnected = false
+
     private var isSimulator: Bool {
         #if targetEnvironment(simulator)
         return true
@@ -43,6 +51,115 @@ class SpeechService: NSObject, ObservableObject {
         "最近有点累，需要休息一下。",
         "学习了很多新知识，收获满满。"
     ]
+
+    // MARK: - 实时云端 ASR
+
+    /// 建立 WebSocket 连接到后端实时 ASR 服务
+    func connectRealtimeASR() {
+        guard let token = KeychainService.shared.loadToken(),
+              let baseURL = URL(string: AppConfig.baseURL),
+              let host = baseURL.host else { return }
+
+        let scheme = baseURL.scheme == "https" ? "wss" : "ws"
+        let port = baseURL.port.map { ":\($0)" } ?? ""
+        guard let wsURL = URL(string: "\(scheme)://\(host)\(port)/ws/asr?token=\(token)") else { return }
+
+        let session = URLSession(configuration: .default)
+        asrWebSocketSession = session
+        asrWebSocket = session.webSocketTask(with: wsURL)
+        asrWebSocket?.resume()
+        receiveASRReady()
+    }
+
+    private func receiveASRReady() {
+        asrWebSocket?.receive { [weak self] result in
+            guard case .success(let message) = result,
+                  case .string(let text) = message,
+                  let data = text.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["type"] as? String == "ready" else {
+                return
+            }
+            self?.isASRConnected = true
+            DispatchQueue.main.async {
+                self?.realtimeASRText = ""
+            }
+            self?.startReceivingASRResults()
+        }
+    }
+
+    private func startReceivingASRResults() {
+        receiveNextASRResult()
+    }
+
+    private func receiveNextASRResult() {
+        asrWebSocket?.receive { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let message):
+                if case .string(let text) = message,
+                   let data = text.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let asrText = json["text"] as? String {
+                    DispatchQueue.main.async {
+                        self.realtimeASRText += asrText
+                    }
+                }
+                self.receiveNextASRResult()
+            case .failure:
+                self.isASRConnected = false
+            }
+        }
+    }
+
+    /// 断开实时 ASR 连接
+    func disconnectRealtimeASR() {
+        isASRConnected = false
+        asrWebSocket?.cancel(with: .normalClosure, reason: nil)
+        asrWebSocket = nil
+        asrWebSocketSession = nil
+        asrAudioConverter = nil
+    }
+
+    /// 设置音频格式转换器（输入格式 → 16kHz PCM Int16）
+    func setupASRAudioConverter(inputFormat: AVAudioFormat) {
+        guard let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: 16000,
+            channels: 1,
+            interleaved: false
+        ) else { return }
+        asrOutputFormat = outputFormat
+        asrAudioConverter = AVAudioConverter(from: inputFormat, to: outputFormat)
+    }
+
+    /// 将音频 buffer 转换为 16kHz PCM 并发送到云端 ASR
+    func sendAudioToRealtimeASR(buffer: AVAudioPCMBuffer) {
+        guard isASRConnected,
+              let ws = asrWebSocket,
+              let converter = asrAudioConverter,
+              let outputFormat = asrOutputFormat else { return }
+
+        let ratio = 16000.0 / buffer.format.sampleRate
+        let outputFrameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+        guard let outputBuffer = AVAudioPCMBuffer(
+            pcmFormat: outputFormat,
+            frameCapacity: max(1, outputFrameCapacity)
+        ) else { return }
+
+        var error: NSError?
+        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
+
+        if error == nil, let int16Data = outputBuffer.int16ChannelData {
+            let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
+            let data = Data(bytes: int16Data[0], count: byteCount)
+            ws.send(.data(data)) { _ in }
+        }
+    }
 
     private override init() {
         super.init()
@@ -125,6 +242,9 @@ class SpeechService: NSObject, ObservableObject {
             self.isRecording = true
             self.startDurationTimer()
             self.startPunctuationTimer()
+
+            // 启动实时云端 ASR
+            self.connectRealtimeASR()
         }
     }
 
@@ -168,7 +288,13 @@ class SpeechService: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 self?.audioLevel = level
             }
+
+            // 发送音频到实时云端 ASR
+            self?.sendAudioToRealtimeASR(buffer: buffer)
         }
+
+        // 设置音频格式转换器（用于云端 ASR）
+        setupASRAudioConverter(inputFormat: recordingFormat)
         isTapInstalled = true
     }
 
@@ -329,6 +455,7 @@ class SpeechService: NSObject, ObservableObject {
         isPaused = false
         stopDurationTimer()
         stopLevelTimer()
+        disconnectRealtimeASR()
 
         let result = transcribedText
         transcribedText = ""
@@ -395,8 +522,10 @@ class SpeechService: NSObject, ObservableObject {
     func reset() {
         cleanupEngineState()
         stopPunctuationTimer()
+        disconnectRealtimeASR()
         transcribedText = ""
         pausedText = ""
+        realtimeASRText = ""
         recordingDuration = 0
         audioLevel = 0
         isRecording = false
