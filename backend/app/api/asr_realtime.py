@@ -128,9 +128,9 @@ async def asr_realtime_websocket(
             callback=callback,
         )
 
-        # stream_call() 是阻塞调用——作为后台任务启动，不 await
+        # start() 是阻塞调用——作为后台任务启动，不 await
         recognition_task = asyncio.create_task(
-            asyncio.to_thread(recognition.stream_call)
+            asyncio.to_thread(recognition.start)
         )
 
         # 等待 ASR 连接就绪或超时
