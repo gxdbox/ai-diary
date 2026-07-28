@@ -62,6 +62,7 @@ root_logger.addHandler(console_handler)
 
 from app.api import diary, analysis, search, dictionary, assistant, companion, world, agent, auth
 from app.api.test_sentry import router as test_router
+from app.api.asr_realtime import router as asr_realtime_router
 from app.db.database import init_db, async_session_maker
 from app.services.oss_service import oss_service
 
@@ -99,6 +100,7 @@ app.include_router(agent.router, prefix="/api/agent", tags=["智能 Agent"])
 app.include_router(world.router, tags=["虚拟世界"])
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(test_router, tags=["测试"])
+app.include_router(asr_realtime_router, tags=["实时语音识别"])
 
 
 @app.on_event("startup")

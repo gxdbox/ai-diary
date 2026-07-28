@@ -150,17 +150,33 @@ struct RecordView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(Color(hex: "1A1918"))
 
+                if !speechService.realtimeASRText.isEmpty {
+                    Text("云端 ASR")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(hex: "4A90E2"))
+                        .cornerRadius(4)
+                }
+
                 Spacer()
 
-                Text("已记录 \(speechService.transcribedText.count) 字")
+                Text("已记录 \(max(speechService.transcribedText.count, speechService.realtimeASRText.count)) 字")
                     .font(.system(size: 12))
                     .foregroundColor(Color(hex: "9C9B99"))
             }
 
             ScrollView {
-                Text(speechService.transcribedText)
-                    .font(.system(size: 15))
-                    .foregroundColor(Color(hex: "6D6C6A"))
+                if !speechService.realtimeASRText.isEmpty {
+                    Text(speechService.realtimeASRText)
+                        .font(.system(size: 15))
+                        .foregroundColor(Color(hex: "2E7D32"))
+                } else {
+                    Text(speechService.transcribedText)
+                        .font(.system(size: 15))
+                        .foregroundColor(Color(hex: "6D6C6A"))
+                }
             }
             .frame(maxHeight: 200)
         }
@@ -252,21 +268,23 @@ struct RecordView: View {
         isProcessing = true
         Task {
             do {
-                // 混合录音流程：先尝试云端 ASR 转写（更准确、带标点）
-                var finalText = text
+                // 优先使用实时云端 ASR 文本（已有标点符号）
+                let realtimeText = speechService.realtimeASRText
+                var finalText = realtimeText.isEmpty ? text : realtimeText
                 var cloudAudioURL: String? = nil
 
+                // 如果有音频文件且实时 ASR 无效，尝试文件转写
                 if let audioFileURL = audioURL {
-                    do {
-                        let result = try await APIService.shared.transcribeAudio(audioFileURL: audioFileURL)
-                        if result.usedCloudASR && !result.rawText.isEmpty {
-                            // 云端 ASR 成功，用云端结果替代本地结果
-                            finalText = result.rawText
+                    if realtimeText.isEmpty {
+                        do {
+                            let result = try await APIService.shared.transcribeAudio(audioFileURL: audioFileURL)
+                            if result.usedCloudASR && !result.rawText.isEmpty {
+                                finalText = result.rawText
+                            }
+                            cloudAudioURL = result.audioURL
+                        } catch {
+                            print("云端 ASR 文件转写失败，使用本地转写结果: \(error)")
                         }
-                        cloudAudioURL = result.audioURL
-                    } catch {
-                        // 云端 ASR 失败，用本地转写结果兌底
-                        print("云端 ASR 转写失败，使用本地转写结果: \(error)")
                     }
                 }
 
