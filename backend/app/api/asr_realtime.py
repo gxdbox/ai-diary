@@ -24,9 +24,8 @@ router = APIRouter()
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 dashscope.api_key = DASHSCOPE_API_KEY
 
-# JWT 密钥（与 auth 模块保持一致）
-SECRET_KEY = os.getenv("SECRET_KEY", "please-change-this-to-a-random-secret-key-at-least-32-chars")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
+# 复用 security.py 中的密钥配置，保证 token 签发和验证一致
+from app.core.security import SECRET_KEY, ALGORITHM
 
 
 def verify_ws_token(token: str) -> int:
@@ -42,15 +41,22 @@ def verify_ws_token(token: str) -> int:
 
 
 class ASRCallback(RecognitionCallback):
-    """DashScope ASR 实时识别回调 — 将结果通过 asyncio.Queue 发送给 WebSocket"""
+    """DashScope ASR 实时识别回调
 
-    def __init__(self):
+    通过 loop.call_soon_threadsafe() 确保所有队列操作在事件循环线程执行，
+    避免 asyncio.Queue 的线程安全问题。
+    """
+
+    def __init__(self, loop: asyncio.AbstractEventLoop):
         self.queue: asyncio.Queue = asyncio.Queue()
+        self.loop = loop
         self.connected = False
         self.stopped = False
+        self.ready_event = asyncio.Event()
 
     def on_open(self):
         self.connected = True
+        self.loop.call_soon_threadsafe(self.ready_event.set)
         logger.info("ASR 实时连接已建立")
 
     def on_event(self, result: RecognitionResult):
@@ -58,18 +64,26 @@ class ASRCallback(RecognitionCallback):
             sentence = result.output.get("sentence", {})
             text = sentence.get("text", "")
             if text and text.strip():
-                self.queue.put_nowait(json.dumps({
+                payload = json.dumps({
                     "text": text.strip(),
                     "sentence_id": sentence.get("sentence_id", 0),
                     "sentence_end": sentence.get("sentence_end", False),
                     "begin_time": sentence.get("begin_time", 0),
                     "end_time": sentence.get("end_time", 0),
-                }, ensure_ascii=False))
+                }, ensure_ascii=False)
+                self.loop.call_soon_threadsafe(self.queue.put_nowait, payload)
         except Exception as e:
             logger.error(f"ASR callback 处理异常: {e}")
 
     def on_error(self, result: RecognitionResult):
-        logger.error(f"ASR 错误: {result.message if hasattr(result, 'message') else str(result)}")
+        msg = result.message if hasattr(result, 'message') else str(result)
+        logger.error(f"ASR 错误: {msg}")
+        self.connected = False
+        try:
+            error_payload = json.dumps({"type": "asr_error", "error": msg}, ensure_ascii=False)
+            self.loop.call_soon_threadsafe(self.queue.put_nowait, error_payload)
+        except Exception:
+            pass
 
     def on_close(self):
         self.connected = False
@@ -78,7 +92,7 @@ class ASRCallback(RecognitionCallback):
     def on_complete(self):
         self.connected = False
         self.stopped = True
-        self.queue.put_nowait(None)  # 发送结束信号
+        self.loop.call_soon_threadsafe(self.queue.put_nowait, None)
         logger.info("ASR 识别完成")
 
 
@@ -92,24 +106,21 @@ async def asr_realtime_websocket(
     流程：
     1. iOS 连接 wss://server/ws/asr?token=xxx
     2. 验证 JWT token
-    3. 服务端建立 DashScope 实时 ASR 连接
+    3. 后台启动 DashScope stream_call，等待连接就绪
     4. iOS 发送二进制音频数据（PCM 16kHz 16bit mono）
     5. 服务端转发到 ASR，实时返回识别结果（JSON 文本）
     6. iOS 断开连接 → 结束识别任务
-
-    支持的音频格式：PCM 16kHz 16bit mono（与 iOS SFSpeech 一致）
     """
-    # 验证 token
     verify_ws_token(token)
-
     await ws.accept()
     logger.info("WebSocket 连接已接受")
 
-    callback = ASRCallback()
+    loop = asyncio.get_running_loop()
+    callback = ASRCallback(loop=loop)
     recognition = None
+    recognition_task = None
 
     try:
-        # 创建 DashScope 实时识别器
         recognition = Recognition(
             model='paraformer-realtime-v2',
             format='pcm',
@@ -117,11 +128,24 @@ async def asr_realtime_websocket(
             callback=callback,
         )
 
-        # 在线程池中启动 stream_call（它内部会建立 WebSocket）
-        await asyncio.to_thread(recognition.stream_call)
+        # stream_call() 是阻塞调用——作为后台任务启动，不 await
+        recognition_task = asyncio.create_task(
+            asyncio.to_thread(recognition.stream_call)
+        )
+
+        # 等待 ASR 连接就绪或超时
+        try:
+            await asyncio.wait_for(callback.ready_event.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            await ws.send_text(
+                json.dumps({"error": "ASR 服务连接超时"}, ensure_ascii=False)
+            )
+            return
 
         if not callback.connected:
-            await ws.send_text(json.dumps({"error": "ASR 服务连接失败"}, ensure_ascii=False))
+            await ws.send_text(
+                json.dumps({"error": "ASR 服务连接失败"}, ensure_ascii=False)
+            )
             return
 
         # 通知 iOS 已就绪
@@ -132,12 +156,13 @@ async def asr_realtime_websocket(
         async def send_asr_results():
             while not callback.stopped:
                 try:
-                    result_text = await asyncio.wait_for(callback.queue.get(), timeout=0.5)
+                    result_text = await asyncio.wait_for(
+                        callback.queue.get(), timeout=0.5
+                    )
                     if result_text is None:
                         break
                     await ws.send_text(result_text)
                 except asyncio.TimeoutError:
-                    # 心跳检查
                     if callback.stopped:
                         break
                     continue
@@ -157,7 +182,7 @@ async def asr_realtime_websocket(
         except WebSocketDisconnect:
             logger.info("iOS 客户端断开连接")
 
-        # 等待 send_task 完成
+        # 停止 ASR
         if not callback.stopped:
             await asyncio.to_thread(recognition.stop)
         await asyncio.wait_for(send_task, timeout=5.0)
@@ -167,16 +192,19 @@ async def asr_realtime_websocket(
     except Exception as e:
         logger.error(f"WebSocket 异常: {e}", exc_info=True)
         try:
-            await ws.send_text(json.dumps({"error": str(e)}, ensure_ascii=False))
+            await ws.send_text(
+                json.dumps({"error": str(e)}, ensure_ascii=False)
+            )
         except Exception:
             pass
     finally:
-        if recognition:
+        if recognition and not callback.stopped:
             try:
-                if not callback.stopped:
-                    await asyncio.to_thread(recognition.stop)
+                await asyncio.to_thread(recognition.stop)
             except Exception:
                 pass
+        if recognition_task and not recognition_task.done():
+            recognition_task.cancel()
         try:
             await ws.close()
         except Exception:

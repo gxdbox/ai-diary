@@ -396,6 +396,7 @@ class SpeechService: NSObject, ObservableObject {
     func clearText() {
         transcribedText = ""
         pausedText = ""
+        realtimeASRText = ""
         recordingDuration = 0
         silenceStartTime = nil
     }
