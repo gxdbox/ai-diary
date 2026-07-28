@@ -102,7 +102,9 @@ class SpeechService: NSObject, ObservableObject {
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let asrText = json["text"] as? String {
                     DispatchQueue.main.async {
-                        self.realtimeASRText += asrText
+                        // ASR 每次返回的都是当前识别到的完整文本，
+                        // 直接替换显示即可（不要用 += 拼接，否则会重复）
+                        self.realtimeASRText = asrText
                     }
                 }
                 self.receiveNextASRResult()
