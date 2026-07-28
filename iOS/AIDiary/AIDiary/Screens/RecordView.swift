@@ -20,7 +20,7 @@ struct RecordView: View {
 
                 recordSection
 
-                if !speechService.transcribedText.isEmpty {
+                if !speechService.transcribedText.isEmpty || !speechService.realtimeASRText.isEmpty {
                     transcribeCard
                 }
 
@@ -254,9 +254,10 @@ struct RecordView: View {
 
     private func finishRecording() {
         let text = speechService.stopRecording()
+        let realtimeText = speechService.realtimeASRText
         let audioURL = speechService.getRecordedAudioURL()
 
-        guard !text.isEmpty else {
+        guard !text.isEmpty || !realtimeText.isEmpty else {
             errorMessage = "未检测到语音内容，请重新录音"
             return
         }
