@@ -102,7 +102,8 @@ class SpeechService: NSObject, ObservableObject {
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let asrText = json["text"] as? String {
                     DispatchQueue.main.async {
-                        self.realtimeASRText += asrText
+                        // paraformer-realtime-v2 每次回调返回完整累计文本，用 = 替换不用 +=
+                        self.realtimeASRText = asrText
                     }
                 }
                 self.receiveNextASRResult()
