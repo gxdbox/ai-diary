@@ -36,6 +36,10 @@ class SpeechService: NSObject, ObservableObject {
     private var asrOutputFormat: AVAudioFormat?
     private var isASRConnected = false
 
+    // 实时 ASR 句子累积：DashScope 按句子返回，需自行拼接
+    private var finalizedSentences: [String] = []  // 已完成识别的句子
+    private var currentSentenceText: String = ""  // 当前正在识别的句子（临时）
+
     private var isSimulator: Bool {
         #if targetEnvironment(simulator)
         return true
@@ -83,6 +87,8 @@ class SpeechService: NSObject, ObservableObject {
             self?.isASRConnected = true
             DispatchQueue.main.async {
                 self?.realtimeASRText = ""
+                self?.finalizedSentences = []
+                self?.currentSentenceText = ""
             }
             self?.startReceivingASRResults()
         }
@@ -101,9 +107,20 @@ class SpeechService: NSObject, ObservableObject {
                    let data = text.data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let asrText = json["text"] as? String {
+                    let sentenceEnd = json["sentence_end"] as? Bool ?? false
                     DispatchQueue.main.async {
-                        // paraformer-realtime-v2 每次回调返回完整累计文本，用 = 替换不用 +=
-                        self.realtimeASRText = asrText
+                        if sentenceEnd {
+                            // 句子识别完成，加入已完成列表
+                            if !asrText.isEmpty {
+                                self.finalizedSentences.append(asrText)
+                            }
+                            self.currentSentenceText = ""
+                        } else {
+                            // 句子识别中，更新当前句子的临时文本
+                            self.currentSentenceText = asrText
+                        }
+                        // 完整文本 = 已完成句子 + 当前进行中的句子
+                        self.realtimeASRText = self.finalizedSentences.joined() + self.currentSentenceText
                     }
                 }
                 self.receiveNextASRResult()
@@ -398,6 +415,8 @@ class SpeechService: NSObject, ObservableObject {
         transcribedText = ""
         pausedText = ""
         realtimeASRText = ""
+        finalizedSentences = []
+        currentSentenceText = ""
         recordingDuration = 0
         silenceStartTime = nil
     }
@@ -528,6 +547,8 @@ class SpeechService: NSObject, ObservableObject {
         transcribedText = ""
         pausedText = ""
         realtimeASRText = ""
+        finalizedSentences = []
+        currentSentenceText = ""
         recordingDuration = 0
         audioLevel = 0
         isRecording = false
