@@ -295,8 +295,13 @@ async def create_diary(
         context_summary = await _get_context_summary(db, current_user.id)
 
         # AI清洗文本（两遍清洗 + 上下文消歧 + 用户词典）
+        # 如果 used_cloud_asr=True，说明 raw_text 来自离线ASR（已带热词、语气词过滤），跳过规则清洗
+        skip_rule_clean = bool(request.used_cloud_asr)
         cleaned_text = await ai_service.clean_text(
-            request.raw_text, context_summary=context_summary, user_id=current_user.id
+            request.raw_text, 
+            context_summary=context_summary, 
+            user_id=current_user.id,
+            skip_rule_clean=skip_rule_clean
         )
 
         # AI分析

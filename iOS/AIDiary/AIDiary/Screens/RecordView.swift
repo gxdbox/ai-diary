@@ -269,31 +269,36 @@ struct RecordView: View {
         isProcessing = true
         Task {
             do {
-                // 优先使用实时云端 ASR 文本（已有标点符号）
                 let realtimeText = speechService.realtimeASRText
-                var finalText = realtimeText.isEmpty ? text : realtimeText
+                var finalText = realtimeText  // 实时文本作为预览备用
                 var cloudAudioURL: String? = nil
+                var usedCloudASR = false
 
-                // 如果有音频文件且实时 ASR 无效，尝试文件转写
+                // 双轨策略：始终优先使用离线ASR（高精度 + 热词）
                 if let audioFileURL = audioURL {
-                    if realtimeText.isEmpty {
-                        do {
-                            let result = try await APIService.shared.transcribeAudio(audioFileURL: audioFileURL)
-                            if result.usedCloudASR && !result.rawText.isEmpty {
-                                finalText = result.rawText
-                            }
-                            cloudAudioURL = result.audioURL
-                        } catch {
-                            print("云端 ASR 文件转写失败，使用本地转写结果: \(error)")
+                    do {
+                        let result = try await APIService.shared.transcribeAudio(audioFileURL: audioFileURL)
+                        if result.usedCloudASR && !result.rawText.isEmpty {
+                            finalText = result.rawText
+                            usedCloudASR = true
                         }
+                        cloudAudioURL = result.audioURL
+                    } catch {
+                        print("云端 ASR 文件转写失败，使用实时转写结果: \(error)")
                     }
+                }
+
+                // 如果离线ASR失败，fallback到实时ASR或本地转写
+                if !usedCloudASR {
+                    finalText = realtimeText.isEmpty ? text : realtimeText
                 }
 
                 // 创建日记（如果云端 ASR 上传了音频，直接传入 audio_url）
                 var diary = try await APIService.shared.createDiary(
                     rawText: finalText,
                     recordingDuration: speechService.recordingDuration,
-                    audioURL: cloudAudioURL
+                    audioURL: cloudAudioURL,
+                    usedCloudASR: usedCloudASR
                 )
 
                 // 如果云端 ASR 未上传音频，仍需单独上传音频文件

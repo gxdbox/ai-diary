@@ -110,7 +110,7 @@ class APIService {
         return try decode(data)
     }
 
-    func createDiary(rawText: String, recordingDuration: Int? = nil, audioURL: String? = nil) async throws -> Diary {
+    func createDiary(rawText: String, recordingDuration: Int? = nil, audioURL: String? = nil, usedCloudASR: Bool = false) async throws -> Diary {
         var request = URLRequest(url: URL(string: "\(baseURL)/api/diary/create")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -123,6 +123,7 @@ class APIService {
         if let audioURL = audioURL {
             body["audio_url"] = audioURL
         }
+        body["used_cloud_asr"] = usedCloudASR
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, _) = try await URLSession.shared.data(for: request)
