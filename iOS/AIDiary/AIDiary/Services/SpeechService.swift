@@ -36,6 +36,10 @@ class SpeechService: NSObject, ObservableObject {
     private var asrOutputFormat: AVAudioFormat?
     private var isASRConnected = false
 
+    // 音频发送缓冲：累积到约 100ms（DashScope 建议每包 1KB~16KB）
+    private var asrAudioBuffer = Data()
+    private let asrChunkSize = 3200  // 100ms @ 16kHz Int16 mono = 3200 bytes
+
     // 实时 ASR 句子累积：DashScope 按句子返回，需自行拼接
     private var finalizedSentences: [String] = []  // 已完成识别的句子
     private var currentSentenceText: String = ""  // 当前正在识别的句子（临时）
@@ -133,6 +137,11 @@ class SpeechService: NSObject, ObservableObject {
     /// 断开实时 ASR 连接
     func disconnectRealtimeASR() {
         isASRConnected = false
+        // flush 缓冲区剩余音频，避免最后几个字丢失
+        if !asrAudioBuffer.isEmpty, let ws = asrWebSocket {
+            ws.send(.data(asrAudioBuffer)) { _ in }
+            asrAudioBuffer.removeAll(keepingCapacity: true)
+        }
         asrWebSocket?.cancel(with: .normalClosure, reason: nil)
         asrWebSocket = nil
         asrWebSocketSession = nil
@@ -172,10 +181,18 @@ class SpeechService: NSObject, ObservableObject {
         }
         converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
 
-        if error == nil, let int16Data = outputBuffer.int16ChannelData {
-            let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
-            let data = Data(bytes: int16Data[0], count: byteCount)
-            ws.send(.data(data)) { _ in }
+        // 只在有实际输出数据时处理
+        guard error == nil, outputBuffer.frameLength > 0,
+              let int16Data = outputBuffer.int16ChannelData else { return }
+
+        let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
+        let data = Data(bytes: int16Data[0], count: byteCount)
+
+        // 累积音频数据，达到约 100ms 后发送（DashScope 建议每包 1KB~16KB）
+        asrAudioBuffer.append(data)
+        if asrAudioBuffer.count >= asrChunkSize {
+            ws.send(.data(asrAudioBuffer)) { _ in }
+            asrAudioBuffer.removeAll(keepingCapacity: true)
         }
     }
 

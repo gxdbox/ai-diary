@@ -125,6 +125,9 @@ async def asr_realtime_websocket(
             model='paraformer-realtime-v2',
             format='pcm',
             sample_rate=16000,
+            language_hints=['zh'],
+            disfluency_removal_enabled=True,
+            semantic_punctuation_enabled=True,
             callback=callback,
         )
 
