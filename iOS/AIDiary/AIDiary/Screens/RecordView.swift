@@ -150,7 +150,16 @@ struct RecordView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(Color(hex: "1A1918"))
 
-                if !speechService.realtimeASRText.isEmpty {
+                // 标签：显示当前使用的转写来源
+                if !speechService.transcribedText.isEmpty {
+                    Text("本地识别")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(hex: "34C759"))
+                        .cornerRadius(4)
+                } else if !speechService.realtimeASRText.isEmpty {
                     Text("云端 ASR")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white)
@@ -168,12 +177,13 @@ struct RecordView: View {
             }
 
             ScrollView {
-                if !speechService.realtimeASRText.isEmpty {
-                    Text(speechService.realtimeASRText)
-                        .font(.system(size: 15))
-                        .foregroundColor(Color(hex: "2E7D32"))
-                } else {
+                // 优先显示 Apple 本地识别（设备端神经网络，准确率更高）
+                if !speechService.transcribedText.isEmpty {
                     Text(speechService.transcribedText)
+                        .font(.system(size: 15))
+                        .foregroundColor(Color(hex: "1A1918"))
+                } else {
+                    Text(speechService.realtimeASRText)
                         .font(.system(size: 15))
                         .foregroundColor(Color(hex: "6D6C6A"))
                 }

@@ -39,7 +39,7 @@ class AIService:
             kwargs["temperature"] = temperature
         return await llm.chat(messages, **kwargs)
 
-    async def clean_text(self, raw_text: str, context_summary: str = None, user_id: int = None) -> str:
+    async def clean_text(self, raw_text: str, context_summary: str = None, user_id: int = None, skip_rule_clean: bool = False) -> str:
         """清洗语音转写文本 — 两遍清洗架构（Typeless 式）
 
         处理流程：
@@ -55,26 +55,28 @@ class AIService:
             raw_text: 原始转写文本
             context_summary: 用户近期日记上下文摘要
             user_id: 用户 ID，用于获取用户特定的词典缓存
+            skip_rule_clean: 是否跳过规则清洗（离线ASR已处理时可跳过）
         """
         from app.api.dictionary import dictionary_words, apply_dictionary_correction
         from app.services.text_cleaner import text_cleaner
 
-        # === 第一遍：规则引擎快速预处理 ===
         pre_corrected = raw_text
 
-        # 1a. 拼音模糊匹配校正（修复同音词/近音词）— 使用用户特定的词典缓存
-        try:
-            pre_corrected = apply_dictionary_correction(pre_corrected, user_id=user_id)
-        except Exception as e:
-            logger.warning(f"拼音前置校正失败，跳过: {e}")
+        # === 第一遍：规则引擎快速预处理（离线ASR场景可跳过）===
+        if not skip_rule_clean:
+            # 1a. 拼音模糊匹配校正（修复同音词/近音词）— 使用用户特定的词典缓存
+            try:
+                pre_corrected = apply_dictionary_correction(pre_corrected, user_id=user_id)
+            except Exception as e:
+                logger.warning(f"拼音前置校正失败，跳过: {e}")
 
-        # 1b. 规则清洗（填充词删除、标点转换、常见错误修复）
-        try:
-            pre_corrected = text_cleaner.clean(pre_corrected)
-        except Exception as e:
-            logger.warning(f"规则清洗失败，跳过: {e}")
+            # 1b. 规则清洗（填充词删除、标点转换、常见错误修复）
+            try:
+                pre_corrected = text_cleaner.clean(pre_corrected)
+            except Exception as e:
+                logger.warning(f"规则清洗失败，跳过: {e}")
 
-        # === 第二遍：LLM 语义级精洗 ===
+        # === 第二遍：LLM 语义级精洗（始终执行）===
         system_prompt = build_cleaner_prompt(
             list(dictionary_words) if dictionary_words else None,
             context_summary

@@ -132,6 +132,25 @@ class APIService {
 
     // MARK: - 云端 ASR 转写
 
+    /// Fun-ASR SDK 配置响应
+    struct ASRSdkConfig: Codable {
+        let apiKey: String
+        let wsURL: String
+        let model: String
+
+        enum CodingKeys: String, CodingKey {
+            case apiKey = "api_key"
+            case wsURL = "ws_url"
+            case model
+        }
+    }
+
+    /// 获取 Fun-ASR iOS SDK 连接配置（API Key 等）
+    func fetchASRSdkConfig() async throws -> ASRSdkConfig {
+        let (data, _) = try await authGET("\(baseURL)/api/asr/sdk-config")
+        return try decode(data)
+    }
+
     struct TranscribeResponse: Codable {
         let rawText: String
         let audioURL: String?

@@ -57,7 +57,7 @@ class ASRService:
     def _transcribe_sync(self, audio_url: str, hot_words=None) -> str:
         """同步转写（在线程池中执行）"""
         parameters = {
-            "language_hints": ["zh", "en"],
+            "language_hints": ["zh"],
             "enable_semantic_sentence_detection": True,
             "disfluency_removal": True,
         }

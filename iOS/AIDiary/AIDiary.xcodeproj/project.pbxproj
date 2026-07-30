@@ -23,7 +23,27 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXBuildFile section */
+		F6A510012F8A000100A14504 /* nuisdk.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F6A510002F8A000100A14504 /* nuisdk.framework */; };
+		F6A510022F8A000100A14504 /* nuisdk.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F6A510002F8A000100A14504 /* nuisdk.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F6A510032F8A000100A14504 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				F6A510022F8A000100A14504 /* nuisdk.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		F6A510002F8A000100A14504 /* nuisdk.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = nuisdk.framework; path = AIDiary/nuisdk.framework; sourceTree = "<group>"; };
 		F6122A5D2F839A2E00A14504 /* AIDiary.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIDiary.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F6122A6C2F839A2E00A14504 /* AIDiaryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIDiaryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F6122A762F839A2E00A14504 /* AIDiaryUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIDiaryUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -34,6 +54,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				nuisdk.framework,
 			);
 			target = F6122A5C2F839A2E00A14504 /* AIDiary */;
 		};
@@ -65,6 +86,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F6A510012F8A000100A14504 /* nuisdk.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -88,6 +110,7 @@
 		F6122A542F839A2E00A14504 = {
 			isa = PBXGroup;
 			children = (
+				F6A510002F8A000100A14504 /* nuisdk.framework */,
 				F6122A5F2F839A2E00A14504 /* AIDiary */,
 				F6122A6F2F839A2E00A14504 /* AIDiaryTests */,
 				F6122A792F839A2E00A14504 /* AIDiaryUITests */,
@@ -115,6 +138,7 @@
 				F6122A592F839A2E00A14504 /* Sources */,
 				F6122A5A2F839A2E00A14504 /* Frameworks */,
 				F6122A5B2F839A2E00A14504 /* Resources */,
+				F6A510032F8A000100A14504 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -422,6 +446,11 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/AIDiary",
+				);
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -438,6 +467,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "AIDiary/AIDiary-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -465,6 +495,11 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/AIDiary",
+				);
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -481,6 +516,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "AIDiary/AIDiary-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;

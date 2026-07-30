@@ -11,7 +11,7 @@ class SpeechService: NSObject, ObservableObject {
     @Published var recordingDuration = 0
     @Published var audioLevel: Float = 0
     @Published var isPaused = false
-    @Published var realtimeASRText: String = ""  // 实时云端 ASR 结果
+    @Published var realtimeASRText: String = ""  // 实时云端 ASR 结果（代理自 FunASRService）
 
     private var audioEngine = AVAudioEngine()
     private var speechRecognizer: SFSpeechRecognizer?
@@ -23,26 +23,12 @@ class SpeechService: NSObject, ObservableObject {
     private var audioRecorder: AVAudioRecorder?
     private var recordedAudioURL: URL?
     private var isTapInstalled = false
+    private var funASRCancellable: AnyCancellable?
 
     // 实时标点：静音检测
     private var silenceStartTime: Date?
     private var punctuationTimer: Timer?
     private let silenceThreshold: Float = 0.01
-
-    // 实时云端 ASR (WebSocket → DashScope)
-    private var asrWebSocket: URLSessionWebSocketTask?
-    private var asrWebSocketSession: URLSession?
-    private var asrAudioConverter: AVAudioConverter?
-    private var asrOutputFormat: AVAudioFormat?
-    private var isASRConnected = false
-
-    // 音频发送缓冲：累积到约 100ms（DashScope 建议每包 1KB~16KB）
-    private var asrAudioBuffer = Data()
-    private let asrChunkSize = 3200  // 100ms @ 16kHz Int16 mono = 3200 bytes
-
-    // 实时 ASR 句子累积：DashScope 按句子返回，需自行拼接
-    private var finalizedSentences: [String] = []  // 已完成识别的句子
-    private var currentSentenceText: String = ""  // 当前正在识别的句子（临时）
 
     private var isSimulator: Bool {
         #if targetEnvironment(simulator)
@@ -60,139 +46,33 @@ class SpeechService: NSObject, ObservableObject {
         "学习了很多新知识，收获满满。"
     ]
 
-    // MARK: - 实时云端 ASR
+    // MARK: - 实时云端 ASR（Fun-ASR SDK）
 
-    /// 建立 WebSocket 连接到后端实时 ASR 服务
-    func connectRealtimeASR() {
-        guard let token = KeychainService.shared.loadToken(),
-              let baseURL = URL(string: AppConfig.baseURL),
-              let host = baseURL.host else { return }
-
-        let scheme = baseURL.scheme == "https" ? "wss" : "ws"
-        let port = baseURL.port.map { ":\($0)" } ?? ""
-        guard let wsURL = URL(string: "\(scheme)://\(host)\(port)/ws/asr?token=\(token)") else { return }
-
-        let session = URLSession(configuration: .default)
-        asrWebSocketSession = session
-        asrWebSocket = session.webSocketTask(with: wsURL)
-        asrWebSocket?.resume()
-        receiveASRReady()
-    }
-
-    private func receiveASRReady() {
-        asrWebSocket?.receive { [weak self] result in
-            guard case .success(let message) = result,
-                  case .string(let text) = message,
-                  let data = text.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  json["type"] as? String == "ready" else {
+    /// 启动 Fun-ASR SDK 实时识别
+    private func startFunASR(sampleRate: Double) {
+        // 订阅 FunASRService 的识别结果，同步到 realtimeASRText
+        funASRCancellable = FunASRService.shared.$realtimeText
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] text in
+                self?.realtimeASRText = text
+            }
+        // 异步获取配置后再启动识别（API Key 从后端获取）
+        Task {
+            guard await FunASRService.shared.fetchConfig() else {
+                print("SpeechService: Fun-ASR 配置获取失败，跳过云端识别")
                 return
             }
-            self?.isASRConnected = true
-            DispatchQueue.main.async {
-                self?.realtimeASRText = ""
-                self?.finalizedSentences = []
-                self?.currentSentenceText = ""
-            }
-            self?.startReceivingASRResults()
+            FunASRService.shared.startRecognition(sampleRate: sampleRate)
         }
     }
 
-    private func startReceivingASRResults() {
-        receiveNextASRResult()
-    }
-
-    private func receiveNextASRResult() {
-        asrWebSocket?.receive { [weak self] result in
-            guard let self = self else { return }
-            switch result {
-            case .success(let message):
-                if case .string(let text) = message,
-                   let data = text.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let asrText = json["text"] as? String {
-                    let sentenceEnd = json["sentence_end"] as? Bool ?? false
-                    DispatchQueue.main.async {
-                        if sentenceEnd {
-                            // 句子识别完成，加入已完成列表
-                            if !asrText.isEmpty {
-                                self.finalizedSentences.append(asrText)
-                            }
-                            self.currentSentenceText = ""
-                        } else {
-                            // 句子识别中，更新当前句子的临时文本
-                            self.currentSentenceText = asrText
-                        }
-                        // 完整文本 = 已完成句子 + 当前进行中的句子
-                        self.realtimeASRText = self.finalizedSentences.joined() + self.currentSentenceText
-                    }
-                }
-                self.receiveNextASRResult()
-            case .failure:
-                self.isASRConnected = false
-            }
-        }
-    }
-
-    /// 断开实时 ASR 连接
-    func disconnectRealtimeASR() {
-        isASRConnected = false
-        // flush 缓冲区剩余音频，避免最后几个字丢失
-        if !asrAudioBuffer.isEmpty, let ws = asrWebSocket {
-            ws.send(.data(asrAudioBuffer)) { _ in }
-            asrAudioBuffer.removeAll(keepingCapacity: true)
-        }
-        asrWebSocket?.cancel(with: .normalClosure, reason: nil)
-        asrWebSocket = nil
-        asrWebSocketSession = nil
-        asrAudioConverter = nil
-    }
-
-    /// 设置音频格式转换器（输入格式 → 16kHz PCM Int16）
-    func setupASRAudioConverter(inputFormat: AVAudioFormat) {
-        guard let outputFormat = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: 16000,
-            channels: 1,
-            interleaved: false
-        ) else { return }
-        asrOutputFormat = outputFormat
-        asrAudioConverter = AVAudioConverter(from: inputFormat, to: outputFormat)
-    }
-
-    /// 将音频 buffer 转换为 16kHz PCM 并发送到云端 ASR
-    func sendAudioToRealtimeASR(buffer: AVAudioPCMBuffer) {
-        guard isASRConnected,
-              let ws = asrWebSocket,
-              let converter = asrAudioConverter,
-              let outputFormat = asrOutputFormat else { return }
-
-        let ratio = 16000.0 / buffer.format.sampleRate
-        let outputFrameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
-        guard let outputBuffer = AVAudioPCMBuffer(
-            pcmFormat: outputFormat,
-            frameCapacity: max(1, outputFrameCapacity)
-        ) else { return }
-
-        var error: NSError?
-        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
-            outStatus.pointee = .haveData
-            return buffer
-        }
-        converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
-
-        // 只在有实际输出数据时处理
-        guard error == nil, outputBuffer.frameLength > 0,
-              let int16Data = outputBuffer.int16ChannelData else { return }
-
-        let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
-        let data = Data(bytes: int16Data[0], count: byteCount)
-
-        // 累积音频数据，达到约 100ms 后发送（DashScope 建议每包 1KB~16KB）
-        asrAudioBuffer.append(data)
-        if asrAudioBuffer.count >= asrChunkSize {
-            ws.send(.data(asrAudioBuffer)) { _ in }
-            asrAudioBuffer.removeAll(keepingCapacity: true)
+    /// 停止 Fun-ASR SDK 实时识别
+    private func stopFunASR() {
+        FunASRService.shared.stopRecognition()
+        // 延迟取消订阅，给 SDK 时间返回最终识别结果
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.funASRCancellable?.cancel()
+            self?.funASRCancellable = nil
         }
     }
 
@@ -277,9 +157,6 @@ class SpeechService: NSObject, ObservableObject {
             self.isRecording = true
             self.startDurationTimer()
             self.startPunctuationTimer()
-
-            // 启动实时云端 ASR
-            self.connectRealtimeASR()
         }
     }
 
@@ -324,13 +201,14 @@ class SpeechService: NSObject, ObservableObject {
                 self?.audioLevel = level
             }
 
-            // 发送音频到实时云端 ASR
-            self?.sendAudioToRealtimeASR(buffer: buffer)
+            // 发送音频到 Fun-ASR SDK（保留原生采样率，SDK 内部处理）
+            FunASRService.shared.feedAudioBuffer(buffer)
         }
 
-        // 设置音频格式转换器（用于云端 ASR）
-        setupASRAudioConverter(inputFormat: recordingFormat)
         isTapInstalled = true
+
+        // 启动 Fun-ASR SDK 实时识别（使用原生采样率，避免有损降采样）
+        startFunASR(sampleRate: recordingFormat.sampleRate)
     }
 
     /// 根据 ASR segment 间隙自动插入标点
@@ -432,8 +310,7 @@ class SpeechService: NSObject, ObservableObject {
         transcribedText = ""
         pausedText = ""
         realtimeASRText = ""
-        finalizedSentences = []
-        currentSentenceText = ""
+        FunASRService.shared.resetText()
         recordingDuration = 0
         silenceStartTime = nil
     }
@@ -493,7 +370,7 @@ class SpeechService: NSObject, ObservableObject {
         isPaused = false
         stopDurationTimer()
         stopLevelTimer()
-        disconnectRealtimeASR()
+        stopFunASR()
 
         let result = transcribedText
         transcribedText = ""
@@ -560,12 +437,11 @@ class SpeechService: NSObject, ObservableObject {
     func reset() {
         cleanupEngineState()
         stopPunctuationTimer()
-        disconnectRealtimeASR()
+        stopFunASR()
         transcribedText = ""
         pausedText = ""
         realtimeASRText = ""
-        finalizedSentences = []
-        currentSentenceText = ""
+        FunASRService.shared.resetText()
         recordingDuration = 0
         audioLevel = 0
         isRecording = false

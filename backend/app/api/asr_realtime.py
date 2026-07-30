@@ -11,7 +11,7 @@ import json
 import asyncio
 import logging
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException, Depends
 from jose import jwt, JWTError
 
 import dashscope
@@ -25,7 +25,8 @@ DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 dashscope.api_key = DASHSCOPE_API_KEY
 
 # 复用 security.py 中的密钥配置，保证 token 签发和验证一致
-from app.core.security import SECRET_KEY, ALGORITHM
+from app.core.security import SECRET_KEY, ALGORITHM, get_current_user
+from app.db.database import User
 
 
 def verify_ws_token(token: str) -> int:
@@ -38,6 +39,18 @@ def verify_ws_token(token: str) -> int:
         return int(user_id)
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+@router.get("/api/asr/sdk-config")
+async def get_asr_sdk_config(current_user: User = Depends(get_current_user)):
+    """返回 Fun-ASR iOS SDK 所需的连接配置（API Key 不下发到客户端明文，仅此接口鉴权后返回）"""
+    if not DASHSCOPE_API_KEY:
+        raise HTTPException(status_code=503, detail="ASR 服务未配置")
+    return {
+        "api_key": DASHSCOPE_API_KEY,
+        "ws_url": "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+        "model": "fun-asr-realtime",
+    }
 
 
 class ASRCallback(RecognitionCallback):
