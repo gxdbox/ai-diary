@@ -151,21 +151,21 @@ struct RecordView: View {
                     .foregroundColor(Color(hex: "1A1918"))
 
                 // 标签：显示当前使用的转写来源
-                if !speechService.transcribedText.isEmpty {
-                    Text("本地识别")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color(hex: "34C759"))
-                        .cornerRadius(4)
-                } else if !speechService.realtimeASRText.isEmpty {
+                if !speechService.realtimeASRText.isEmpty {
                     Text("云端 ASR")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Color(hex: "4A90E2"))
+                        .cornerRadius(4)
+                } else if !speechService.transcribedText.isEmpty {
+                    Text("本地识别")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(hex: "34C759"))
                         .cornerRadius(4)
                 }
 
@@ -177,13 +177,13 @@ struct RecordView: View {
             }
 
             ScrollView {
-                // 优先显示 Apple 本地识别（设备端神经网络，准确率更高）
-                if !speechService.transcribedText.isEmpty {
-                    Text(speechService.transcribedText)
+                // 优先显示云端 Fun-ASR 识别（原生采样率 + 语义断句，准确率更高）
+                if !speechService.realtimeASRText.isEmpty {
+                    Text(speechService.realtimeASRText)
                         .font(.system(size: 15))
                         .foregroundColor(Color(hex: "1A1918"))
                 } else {
-                    Text(speechService.realtimeASRText)
+                    Text(speechService.transcribedText)
                         .font(.system(size: 15))
                         .foregroundColor(Color(hex: "6D6C6A"))
                 }
