@@ -1,4 +1,419 @@
 import Foundation
+import AVFoundation
+import Combine
+
+class SpeechService: NSObject, ObservableObject {
+    static let shared = SpeechService()
+
+    @Published var isRecording = false
+    @Published var transcribedText = ""
+    @Published var recordingDuration = 0
+    @Published var audioLevel: Float = 0
+    @Published var isPaused = false
+    @Published var realtimeASRText: String = ""  // 云端 ASR 实时结果（代理自 FunASRService）
+    @Published var asrConnected = false  // 云端 ASR 连接状态
+    @Published var asrError: String?  // 云端 ASR 错误信息
+
+    private var audioEngine = AVAudioEngine()
+    private var timer: Timer?
+    private var levelTimer: Timer?
+    private var pausedText: String = ""
+    private var audioRecorder: AVAudioRecorder?
+    private var recordedAudioURL: URL?
+    private var isTapInstalled = false
+    private var funASRCancellable: AnyCancellable?
+    private var funASRStateCancellable: AnyCancellable?
+    private var funASRErrorCancellable: AnyCancellable?
+
+    // 实时标点：静音检测
+    private var silenceStartTime: Date?
+    private var punctuationTimer: Timer?
+    private let silenceThreshold: Float = 0.01
+
+    private var isSimulator: Bool {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    private var simulatedTexts = [
+        "今天天气很好，我去公园散步了。",
+        "工作完成了，感觉很有成就感。",
+        "和朋友一起吃饭聊天，很开心。",
+        "最近有点累，需要休息一下。",
+        "学习了很多新知识，收获满满。"
+    ]
+
+    // MARK: - 云端 ASR（Fun-ASR SDK）
+
+    /// 启动云端 ASR 实时识别
+    private func startCloudASR(sampleRate: Double) {
+        // 订阅 FunASRService 的识别结果
+        funASRCancellable = FunASRService.shared.$realtimeText
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] text in
+                self?.realtimeASRText = text
+            }
+
+        // 订阅连接状态
+        funASRStateCancellable = FunASRService.shared.$isRecognizing
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] connected in
+                self?.asrConnected = connected
+            }
+
+        // 订阅错误信息
+        funASRErrorCancellable = FunASRService.shared.$connectionError
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] error in
+                self?.asrError = error
+            }
+
+        // 异步获取配置后启动识别
+        Task {
+            guard await FunASRService.shared.fetchConfig() else {
+                await MainActor.run {
+                    self.asrError = "云端 ASR 配置获取失败"
+                }
+                return
+            }
+            FunASRService.shared.startRecognition(sampleRate: sampleRate)
+        }
+    }
+
+    /// 停止云端 ASR 实时识别
+    private func stopCloudASR() {
+        FunASRService.shared.stopRecognition()
+        // 延迟取消订阅，给 SDK 时间返回最终识别结果
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.funASRCancellable?.cancel()
+            self?.funASRStateCancellable?.cancel()
+            self?.funASRErrorCancellable?.cancel()
+            self?.funASRCancellable = nil
+            self?.funASRStateCancellable = nil
+            self?.funASRErrorCancellable = nil
+        }
+    }
+
+    private override init() {
+        super.init()
+    }
+
+    func requestAuthorization(completion: @escaping (Bool) -> Void) {
+        // 只需要麦克风权限，不再需要语音识别权限
+        let session = AVAudioSession.sharedInstance()
+        switch session.recordPermission {
+        case .granted:
+            completion(true)
+        case .undetermined:
+            session.requestRecordPermission { granted in
+                DispatchQueue.main.async {
+                    completion(granted)
+                }
+            }
+        case .denied:
+            completion(false)
+        @unknown default:
+            completion(false)
+        }
+    }
+
+    /// 安全移除 inputNode tap
+    private func safeRemoveTap() {
+        guard isTapInstalled else { return }
+        isTapInstalled = false
+        audioEngine.inputNode.removeTap(onBus: 0)
+    }
+
+    /// 清理引擎状态：移除旧 tap、停止引擎
+    private func cleanupEngineState() {
+        safeRemoveTap()
+        audioEngine.stop()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    func startRecording(onTextChange: @escaping (String) -> Void) {
+        if isSimulator {
+            cleanupEngineState()
+            startSimulatedRecording(onTextChange: onTextChange)
+            startAudioRecorder()
+            return
+        }
+
+        requestAuthorization { [weak self] authorized in
+            guard let self = self, authorized else { return }
+
+            // 清理上次录音残留状态
+            self.cleanupEngineState()
+            self.asrError = nil
+
+            // 重建 audioEngine 确保干净状态
+            self.audioEngine = AVAudioEngine()
+
+            guard self.setupAudioSession() else {
+                print("SpeechService: 音频会话配置失败")
+                return
+            }
+
+            self.startAudioRecorder()
+            self.installAudioTap()
+
+            self.audioEngine.prepare()
+            do {
+                try self.audioEngine.start()
+            } catch {
+                print("SpeechService: audioEngine 启动失败: \(error)")
+                self.cleanupEngineState()
+                return
+            }
+
+            self.isRecording = true
+            self.startDurationTimer()
+            self.startPunctuationTimer()
+        }
+    }
+
+    /// 安装音频 tap：采集音频喂给云端 ASR + 计算音量
+    private func installAudioTap() {
+        let inputNode = audioEngine.inputNode
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            guard let self = self else { return }
+
+            // 音量计算
+            guard let channelData = buffer.floatChannelData else { return }
+            let channelDataValue = channelData[0]
+            let channelLength = Int(buffer.frameLength)
+
+            var sum: Float = 0
+            for i in 0..<channelLength {
+                sum += channelDataValue[i] * channelDataValue[i]
+            }
+            let rms = sqrt(sum / Float(channelLength))
+            let level = min(max((rms * 50), 0), 1)
+
+            DispatchQueue.main.async {
+                self.audioLevel = level
+            }
+
+            // 发送音频到云端 ASR SDK
+            FunASRService.shared.feedAudioBuffer(buffer)
+        }
+
+        isTapInstalled = true
+
+        // 启动云端 ASR 实时识别
+        startCloudASR(sampleRate: recordingFormat.sampleRate)
+    }
+
+    // MARK: - 实时标点（静音检测）
+
+    private func startPunctuationTimer() {
+        punctuationTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkTrailingSilence()
+        }
+    }
+
+    private func stopPunctuationTimer() {
+        punctuationTimer?.invalidate()
+        punctuationTimer = nil
+        silenceStartTime = nil
+    }
+
+    /// 检测录音尾部的静音段，自动追加标点
+    private func checkTrailingSilence() {
+        guard isRecording, !isPaused, !realtimeASRText.isEmpty else { return }
+
+        let lastChar = realtimeASRText.last
+        if lastChar == "。" || lastChar == "，" || lastChar == "？" || lastChar == "！" {
+            return
+        }
+
+        if audioLevel < silenceThreshold {
+            if silenceStartTime == nil {
+                silenceStartTime = Date()
+            }
+            let silenceDuration = Date().timeIntervalSince(silenceStartTime!)
+            if silenceDuration > 1.5 {
+                realtimeASRText += "。"
+            } else if silenceDuration > 0.5 {
+                realtimeASRText += "，"
+            }
+        } else {
+            silenceStartTime = nil
+        }
+    }
+
+    func pauseRecording() {
+        guard isRecording, !isPaused else { return }
+        isPaused = true
+        pausedText = realtimeASRText
+        timer?.invalidate()
+        levelTimer?.invalidate()
+        punctuationTimer?.invalidate()
+
+        audioEngine.pause()
+    }
+
+    func resumeRecording(onTextChange: @escaping (String) -> Void) {
+        guard isPaused else { return }
+        isPaused = false
+        realtimeASRText = pausedText
+
+        do {
+            try audioEngine.start()
+            startDurationTimer()
+            startPunctuationTimer()
+        } catch {
+            print("SpeechService: 恢复录音失败: \(error)")
+            isPaused = true
+        }
+    }
+
+    func clearText() {
+        transcribedText = ""
+        pausedText = ""
+        realtimeASRText = ""
+        asrError = nil
+        FunASRService.shared.resetText()
+        recordingDuration = 0
+        silenceStartTime = nil
+    }
+
+    private func startLevelTimer() {}
+
+    private func stopLevelTimer() {
+        levelTimer?.invalidate()
+        levelTimer = nil
+        audioLevel = 0
+    }
+
+    private func startSimulatedRecording(onTextChange: @escaping (String) -> Void) {
+        isRecording = true
+        isPaused = false
+        recordingDuration = 0
+        realtimeASRText = pausedText
+        startPunctuationTimer()
+
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self = self, !self.isPaused else { return }
+            self.recordingDuration += 2
+            let randomText = self.simulatedTexts.randomElement() ?? "模拟语音转写内容"
+            self.realtimeASRText += randomText
+            onTextChange(self.realtimeASRText)
+        }
+
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self = self, !self.isPaused else { return }
+            let level = Float.random(in: 0.2...0.8)
+            self.audioLevel = level
+        }
+    }
+
+    func stopRecording() -> String {
+        timer?.invalidate()
+        timer = nil
+        levelTimer?.invalidate()
+        levelTimer = nil
+        stopPunctuationTimer()
+
+        audioRecorder?.stop()
+        audioRecorder = nil
+
+        safeRemoveTap()
+        audioEngine.stop()
+
+        isRecording = false
+        isPaused = false
+        stopDurationTimer()
+        stopLevelTimer()
+        stopCloudASR()
+
+        let result = realtimeASRText
+        transcribedText = ""
+        pausedText = ""
+        return result
+    }
+
+    private func startDurationTimer() {
+        recordingDuration = 0
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self, !self.isPaused else { return }
+            self.recordingDuration += 1
+        }
+        startLevelTimer()
+    }
+
+    private func stopDurationTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    // MARK: - Audio Recorder
+
+    func getRecordedAudioURL() -> URL? {
+        return recordedAudioURL
+    }
+
+    private func setupAudioSession() -> Bool {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try session.setActive(true)
+            return true
+        } catch {
+            print("SpeechService: AVAudioSession 配置失败: \(error)")
+            return false
+        }
+    }
+
+    private func startAudioRecorder() {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileName = "diary_recording_\(UUID().uuidString).m4a"
+        let fileURL = tempDir.appendingPathComponent(fileName)
+
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: 44100.0,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+            AVEncoderBitRateKey: 128000
+        ]
+
+        recordedAudioURL = fileURL
+        do {
+            audioRecorder = try AVAudioRecorder(url: fileURL, settings: settings)
+            audioRecorder?.record()
+        } catch {
+            print("SpeechService: AVAudioRecorder 初始化失败: \(error)")
+            audioRecorder = nil
+            recordedAudioURL = nil
+        }
+    }
+
+    func reset() {
+        cleanupEngineState()
+        stopPunctuationTimer()
+        stopCloudASR()
+        transcribedText = ""
+        pausedText = ""
+        realtimeASRText = ""
+        asrError = nil
+        asrConnected = false
+        FunASRService.shared.resetText()
+        recordingDuration = 0
+        audioLevel = 0
+        isRecording = false
+        isPaused = false
+        recordedAudioURL = nil
+        audioRecorder = nil
+        silenceStartTime = nil
+    }
+}
+import Foundation
 import Speech
 import AVFoundation
 import Combine

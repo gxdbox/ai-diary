@@ -21,6 +21,8 @@ class FunASRService: NSObject, ObservableObject {
     @Published var realtimeText: String = ""
     /// SDK 是否已连接并正在识别
     @Published var isRecognizing = false
+    /// 连接错误信息
+    @Published var connectionError: String?
 
     // MARK: - SDK Instance
 
@@ -98,11 +100,15 @@ class FunASRService: NSObject, ObservableObject {
         let ret = nui?.nui_dialog_start(MODE_P2T, dialogParam: nil)
         if let ret = ret, ret != SUCCESS {
             print("FunASRService: 启动识别失败, code=\(ret)")
+            DispatchQueue.main.async {
+                self.connectionError = "ASR 启动失败(\(ret))"
+            }
             return
         }
 
         DispatchQueue.main.async {
             self.isRecognizing = true
+            self.connectionError = nil
         }
     }
 
@@ -289,6 +295,11 @@ extension FunASRService: NeoNuiSdkDelegate {
             print("FunASRService: ASR 错误, code=\(code)")
             DispatchQueue.main.async {
                 self.isRecognizing = false
+                if code == 240093 {
+                    self.connectionError = "云端 ASR 连接超时，请检查网络后重试"
+                } else {
+                    self.connectionError = "云端 ASR 错误(\(code))"
+                }
             }
 
         case EVENT_MIC_ERROR:

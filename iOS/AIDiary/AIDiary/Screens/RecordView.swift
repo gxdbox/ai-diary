@@ -20,7 +20,7 @@ struct RecordView: View {
 
                 recordSection
 
-                if !speechService.transcribedText.isEmpty || !speechService.realtimeASRText.isEmpty {
+                if !speechService.realtimeASRText.isEmpty || speechService.asrError != nil {
                     transcribeCard
                 }
 
@@ -150,8 +150,8 @@ struct RecordView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(Color(hex: "1A1918"))
 
-                // 标签：显示当前使用的转写来源
-                if !speechService.realtimeASRText.isEmpty {
+                // 连接状态标签
+                if speechService.asrConnected {
                     Text("云端 ASR")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white)
@@ -159,33 +159,36 @@ struct RecordView: View {
                         .padding(.vertical, 2)
                         .background(Color(hex: "4A90E2"))
                         .cornerRadius(4)
-                } else if !speechService.transcribedText.isEmpty {
-                    Text("本地识别")
+                } else if speechService.isRecording {
+                    Text("连接中...")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color(hex: "34C759"))
+                        .background(Color(hex: "9C9B99"))
                         .cornerRadius(4)
                 }
 
                 Spacer()
 
-                Text("已记录 \(max(speechService.transcribedText.count, speechService.realtimeASRText.count)) 字")
+                Text("已记录 \(speechService.realtimeASRText.count) 字")
                     .font(.system(size: 12))
                     .foregroundColor(Color(hex: "9C9B99"))
             }
 
             ScrollView {
-                // 优先显示云端 Fun-ASR 识别（原生采样率 + 语义断句，准确率更高）
                 if !speechService.realtimeASRText.isEmpty {
                     Text(speechService.realtimeASRText)
                         .font(.system(size: 15))
                         .foregroundColor(Color(hex: "1A1918"))
+                } else if let error = speechService.asrError {
+                    Text(error)
+                        .font(.system(size: 14))
+                        .foregroundColor(Color(hex: "D08068"))
                 } else {
-                    Text(speechService.transcribedText)
+                    Text("等待云端识别...")
                         .font(.system(size: 15))
-                        .foregroundColor(Color(hex: "6D6C6A"))
+                        .foregroundColor(Color(hex: "9C9B99"))
                 }
             }
             .frame(maxHeight: 200)
@@ -264,10 +267,9 @@ struct RecordView: View {
 
     private func finishRecording() {
         let text = speechService.stopRecording()
-        let realtimeText = speechService.realtimeASRText
         let audioURL = speechService.getRecordedAudioURL()
 
-        guard !text.isEmpty || !realtimeText.isEmpty else {
+        guard !text.isEmpty else {
             errorMessage = "未检测到语音内容，请重新录音"
             return
         }
@@ -279,12 +281,12 @@ struct RecordView: View {
         isProcessing = true
         Task {
             do {
-                let realtimeText = speechService.realtimeASRText
-                var finalText = realtimeText  // 实时文本作为预览备用
+                // text 已是云端实时 ASR 结果
+                var finalText = text
                 var cloudAudioURL: String? = nil
                 var usedCloudASR = false
 
-                // 双轨策略：始终优先使用离线ASR（高精度 + 热词）
+                // 始终优先使用离线 ASR（高精度 + 热词），失败则用实时文本
                 if let audioFileURL = audioURL {
                     do {
                         let result = try await APIService.shared.transcribeAudio(audioFileURL: audioFileURL)
@@ -296,11 +298,6 @@ struct RecordView: View {
                     } catch {
                         print("云端 ASR 文件转写失败，使用实时转写结果: \(error)")
                     }
-                }
-
-                // 如果离线ASR失败，fallback到实时ASR或本地转写
-                if !usedCloudASR {
-                    finalText = realtimeText.isEmpty ? text : realtimeText
                 }
 
                 // 创建日记（如果云端 ASR 上传了音频，直接传入 audio_url）
